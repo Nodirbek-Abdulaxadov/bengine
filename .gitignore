@@ -1,0 +1,12 @@
+# .NET
+bin/
+obj/
+*.user
+
+# Node / frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Local artifacts
+*.local

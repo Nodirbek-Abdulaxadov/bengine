@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Bengine.Api/Bengine.Api.csproj" />
+    <Project Path="src/Bengine.Cli/Bengine.Cli.csproj" />
+    <Project Path="src/Bengine/Bengine.csproj" />
+  </Folder>
+</Solution>

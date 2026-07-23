@@ -1,0 +1,224 @@
+{
+  "name": "shop",
+  "tables": [
+    {
+      "name": "categories",
+      "schema": "public",
+      "columns": [
+        { "name": "id", "type": { "dataType": "BigInt" }, "nullability": "NotNull", "identity": { "strategy": "Identity" } },
+        { "name": "parent_id", "type": { "dataType": "BigInt" }, "nullability": "Nullable" },
+        { "name": "name", "type": { "dataType": "VarChar", "length": 100 }, "nullability": "NotNull",
+          "validation": { "kind": "String", "string": { "minLength": 1, "maxLength": 100 } } },
+        { "name": "slug", "type": { "dataType": "VarChar", "length": 120 }, "nullability": "NotNull" }
+      ],
+      "primaryKey": { "name": "pk_categories", "columnNames": ["id"] },
+      "foreignKeys": [
+        { "name": "fk_categories_parent", "columns": ["parent_id"], "referencedTable": "categories", "referencedSchema": "public", "referencedColumns": ["id"], "onDelete": "SetNull" }
+      ],
+      "indexes": [
+        { "name": "ux_categories_slug", "type": "Unique", "columns": [{ "columnName": "slug" }] }
+      ]
+    },
+    {
+      "name": "products",
+      "schema": "public",
+      "columns": [
+        { "name": "id", "type": { "dataType": "BigInt" }, "nullability": "NotNull", "identity": { "strategy": "Identity" } },
+        { "name": "category_id", "type": { "dataType": "BigInt" }, "nullability": "NotNull" },
+        { "name": "sku", "type": { "dataType": "VarChar", "length": 64 }, "nullability": "NotNull" },
+        { "name": "name", "type": { "dataType": "VarChar", "length": 200 }, "nullability": "NotNull" },
+        { "name": "description", "type": { "dataType": "Text" }, "nullability": "Nullable" },
+        { "name": "price", "type": { "dataType": "Decimal", "precision": 12, "scale": 2 }, "nullability": "NotNull",
+          "validation": { "kind": "Numeric", "numeric": { "minValue": 0 } } },
+        { "name": "stock", "type": { "dataType": "Integer" }, "nullability": "NotNull", "default": { "kind": "Literal", "value": "0" } },
+        { "name": "is_active", "type": { "dataType": "Boolean" }, "nullability": "NotNull", "default": { "kind": "Literal", "value": "true" } },
+        { "name": "created_at", "type": { "dataType": "TimestampTz" }, "nullability": "NotNull", "default": { "kind": "CurrentTimestamp" } }
+      ],
+      "primaryKey": { "name": "pk_products", "columnNames": ["id"] },
+      "foreignKeys": [
+        { "name": "fk_products_category", "columns": ["category_id"], "referencedTable": "categories", "referencedSchema": "public", "referencedColumns": ["id"], "onDelete": "Restrict" }
+      ],
+      "indexes": [
+        { "name": "ux_products_sku", "type": "Unique", "columns": [{ "columnName": "sku" }] },
+        { "name": "ix_products_category", "columns": [{ "columnName": "category_id" }] }
+      ],
+      "checkConstraints": [
+        { "name": "ck_products_price", "expression": "price >= 0" },
+        { "name": "ck_products_stock", "expression": "stock >= 0" }
+      ]
+    },
+    {
+      "name": "customers",
+      "schema": "public",
+      "columns": [
+        { "name": "id", "type": { "dataType": "BigInt" }, "nullability": "NotNull", "identity": { "strategy": "Identity" } },
+        { "name": "email", "type": { "dataType": "VarChar", "length": 320 }, "nullability": "NotNull",
+          "validation": { "kind": "String", "string": { "minLength": 3, "maxLength": 320 } } },
+        { "name": "full_name", "type": { "dataType": "VarChar", "length": 200 }, "nullability": "NotNull" },
+        { "name": "phone", "type": { "dataType": "VarChar", "length": 32 }, "nullability": "Nullable" },
+        { "name": "created_at", "type": { "dataType": "TimestampTz" }, "nullability": "NotNull", "default": { "kind": "CurrentTimestamp" } }
+      ],
+      "primaryKey": { "name": "pk_customers", "columnNames": ["id"] },
+      "indexes": [
+        { "name": "ux_customers_email", "type": "Unique", "columns": [{ "columnName": "email" }] }
+      ]
+    },
+    {
+      "name": "addresses",
+      "schema": "public",
+      "columns": [
+        { "name": "id", "type": { "dataType": "BigInt" }, "nullability": "NotNull", "identity": { "strategy": "Identity" } },
+        { "name": "customer_id", "type": { "dataType": "BigInt" }, "nullability": "NotNull" },
+        { "name": "line1", "type": { "dataType": "VarChar", "length": 200 }, "nullability": "NotNull" },
+        { "name": "city", "type": { "dataType": "VarChar", "length": 100 }, "nullability": "NotNull" },
+        { "name": "country", "type": { "dataType": "Char", "length": 2 }, "nullability": "NotNull" },
+        { "name": "postal_code", "type": { "dataType": "VarChar", "length": 20 }, "nullability": "Nullable" },
+        { "name": "is_default", "type": { "dataType": "Boolean" }, "nullability": "NotNull", "default": { "kind": "Literal", "value": "false" } }
+      ],
+      "primaryKey": { "name": "pk_addresses", "columnNames": ["id"] },
+      "foreignKeys": [
+        { "name": "fk_addresses_customer", "columns": ["customer_id"], "referencedTable": "customers", "referencedSchema": "public", "referencedColumns": ["id"], "onDelete": "Cascade" }
+      ],
+      "indexes": [
+        { "name": "ix_addresses_customer", "columns": [{ "columnName": "customer_id" }] }
+      ]
+    },
+    {
+      "name": "orders",
+      "schema": "public",
+      "columns": [
+        { "name": "id", "type": { "dataType": "BigInt" }, "nullability": "NotNull", "identity": { "strategy": "Identity" } },
+        { "name": "customer_id", "type": { "dataType": "BigInt" }, "nullability": "NotNull" },
+        { "name": "status", "type": { "dataType": "VarChar", "length": 20 }, "nullability": "NotNull", "default": { "kind": "Literal", "value": "'pending'" } },
+        { "name": "total", "type": { "dataType": "Decimal", "precision": 12, "scale": 2 }, "nullability": "NotNull", "default": { "kind": "Literal", "value": "0" } },
+        { "name": "created_at", "type": { "dataType": "TimestampTz" }, "nullability": "NotNull", "default": { "kind": "CurrentTimestamp" } }
+      ],
+      "primaryKey": { "name": "pk_orders", "columnNames": ["id"] },
+      "foreignKeys": [
+        { "name": "fk_orders_customer", "columns": ["customer_id"], "referencedTable": "customers", "referencedSchema": "public", "referencedColumns": ["id"], "onDelete": "Restrict" }
+      ],
+      "indexes": [
+        { "name": "ix_orders_customer", "columns": [{ "columnName": "customer_id" }] },
+        { "name": "ix_orders_status", "columns": [{ "columnName": "status" }] }
+      ],
+      "checkConstraints": [
+        { "name": "ck_orders_total", "expression": "total >= 0" }
+      ]
+    },
+    {
+      "name": "order_items",
+      "schema": "public",
+      "columns": [
+        { "name": "id", "type": { "dataType": "BigInt" }, "nullability": "NotNull", "identity": { "strategy": "Identity" } },
+        { "name": "order_id", "type": { "dataType": "BigInt" }, "nullability": "NotNull" },
+        { "name": "product_id", "type": { "dataType": "BigInt" }, "nullability": "NotNull" },
+        { "name": "quantity", "type": { "dataType": "Integer" }, "nullability": "NotNull", "default": { "kind": "Literal", "value": "1" } },
+        { "name": "unit_price", "type": { "dataType": "Decimal", "precision": 12, "scale": 2 }, "nullability": "NotNull" },
+        { "name": "line_total", "type": { "dataType": "Decimal", "precision": 12, "scale": 2 }, "nullability": "NotNull",
+          "generated": { "kind": "Stored", "expression": "quantity * unit_price" } }
+      ],
+      "primaryKey": { "name": "pk_order_items", "columnNames": ["id"] },
+      "foreignKeys": [
+        { "name": "fk_order_items_order", "columns": ["order_id"], "referencedTable": "orders", "referencedSchema": "public", "referencedColumns": ["id"], "onDelete": "Cascade" },
+        { "name": "fk_order_items_product", "columns": ["product_id"], "referencedTable": "products", "referencedSchema": "public", "referencedColumns": ["id"], "onDelete": "Restrict" }
+      ],
+      "indexes": [
+        { "name": "ix_order_items_order", "columns": [{ "columnName": "order_id" }] }
+      ],
+      "checkConstraints": [
+        { "name": "ck_order_items_qty", "expression": "quantity > 0" }
+      ]
+    },
+    {
+      "name": "payments",
+      "schema": "public",
+      "columns": [
+        { "name": "id", "type": { "dataType": "BigInt" }, "nullability": "NotNull", "identity": { "strategy": "Identity" } },
+        { "name": "order_id", "type": { "dataType": "BigInt" }, "nullability": "NotNull" },
+        { "name": "amount", "type": { "dataType": "Decimal", "precision": 12, "scale": 2 }, "nullability": "NotNull" },
+        { "name": "method", "type": { "dataType": "VarChar", "length": 20 }, "nullability": "NotNull" },
+        { "name": "status", "type": { "dataType": "VarChar", "length": 20 }, "nullability": "NotNull", "default": { "kind": "Literal", "value": "'pending'" } },
+        { "name": "paid_at", "type": { "dataType": "TimestampTz" }, "nullability": "Nullable" }
+      ],
+      "primaryKey": { "name": "pk_payments", "columnNames": ["id"] },
+      "foreignKeys": [
+        { "name": "fk_payments_order", "columns": ["order_id"], "referencedTable": "orders", "referencedSchema": "public", "referencedColumns": ["id"], "onDelete": "Cascade" }
+      ],
+      "indexes": [
+        { "name": "ix_payments_order", "columns": [{ "columnName": "order_id" }] }
+      ]
+    },
+    {
+      "name": "reviews",
+      "schema": "public",
+      "columns": [
+        { "name": "id", "type": { "dataType": "BigInt" }, "nullability": "NotNull", "identity": { "strategy": "Identity" } },
+        { "name": "product_id", "type": { "dataType": "BigInt" }, "nullability": "NotNull" },
+        { "name": "customer_id", "type": { "dataType": "BigInt" }, "nullability": "NotNull" },
+        { "name": "rating", "type": { "dataType": "TinyInt" }, "nullability": "NotNull",
+          "validation": { "kind": "Numeric", "numeric": { "minValue": 1, "maxValue": 5 } } },
+        { "name": "comment", "type": { "dataType": "Text" }, "nullability": "Nullable" },
+        { "name": "created_at", "type": { "dataType": "TimestampTz" }, "nullability": "NotNull", "default": { "kind": "CurrentTimestamp" } }
+      ],
+      "primaryKey": { "name": "pk_reviews", "columnNames": ["id"] },
+      "foreignKeys": [
+        { "name": "fk_reviews_product", "columns": ["product_id"], "referencedTable": "products", "referencedSchema": "public", "referencedColumns": ["id"], "onDelete": "Cascade" },
+        { "name": "fk_reviews_customer", "columns": ["customer_id"], "referencedTable": "customers", "referencedSchema": "public", "referencedColumns": ["id"], "onDelete": "Cascade" }
+      ],
+      "indexes": [
+        { "name": "ix_reviews_product", "columns": [{ "columnName": "product_id" }] }
+      ],
+      "checkConstraints": [
+        { "name": "ck_reviews_rating", "expression": "rating BETWEEN 1 AND 5" }
+      ]
+    },
+    {
+      "name": "coupons",
+      "schema": "public",
+      "columns": [
+        { "name": "id", "type": { "dataType": "BigInt" }, "nullability": "NotNull", "identity": { "strategy": "Identity" } },
+        { "name": "code", "type": { "dataType": "VarChar", "length": 40 }, "nullability": "NotNull" },
+        { "name": "discount_percent", "type": { "dataType": "SmallInt" }, "nullability": "NotNull",
+          "validation": { "kind": "Numeric", "numeric": { "minValue": 0, "maxValue": 100 } } },
+        { "name": "valid_until", "type": { "dataType": "Date" }, "nullability": "Nullable" },
+        { "name": "max_uses", "type": { "dataType": "Integer" }, "nullability": "Nullable" }
+      ],
+      "primaryKey": { "name": "pk_coupons", "columnNames": ["id"] },
+      "indexes": [
+        { "name": "ux_coupons_code", "type": "Unique", "columns": [{ "columnName": "code" }] }
+      ],
+      "checkConstraints": [
+        { "name": "ck_coupons_discount", "expression": "discount_percent BETWEEN 0 AND 100" }
+      ]
+    },
+    {
+      "name": "inventory_movements",
+      "schema": "public",
+      "columns": [
+        { "name": "id", "type": { "dataType": "BigInt" }, "nullability": "NotNull", "identity": { "strategy": "Identity" } },
+        { "name": "product_id", "type": { "dataType": "BigInt" }, "nullability": "NotNull" },
+        { "name": "delta", "type": { "dataType": "Integer" }, "nullability": "NotNull" },
+        { "name": "reason", "type": { "dataType": "VarChar", "length": 100 }, "nullability": "Nullable" },
+        { "name": "created_at", "type": { "dataType": "TimestampTz" }, "nullability": "NotNull", "default": { "kind": "CurrentTimestamp" } }
+      ],
+      "primaryKey": { "name": "pk_inventory_movements", "columnNames": ["id"] },
+      "foreignKeys": [
+        { "name": "fk_inventory_product", "columns": ["product_id"], "referencedTable": "products", "referencedSchema": "public", "referencedColumns": ["id"], "onDelete": "Cascade" }
+      ],
+      "indexes": [
+        { "name": "ix_inventory_product", "columns": [{ "columnName": "product_id" }] }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "name": "product_catalog",
+      "schema": "public",
+      "definition": "SELECT p.id, p.name, p.price, c.name AS category FROM products p JOIN categories c ON c.id = p.category_id WHERE p.is_active = true",
+      "isMaterialized": false
+    }
+  ],
+  "sequences": [
+    { "name": "order_number_seq", "schema": "public", "dataType": "BigInt", "startValue": 100000, "increment": 1, "cycle": false }
+  ]
+}
