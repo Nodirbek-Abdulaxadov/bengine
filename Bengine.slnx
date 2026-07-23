@@ -4,4 +4,7 @@
     <Project Path="src/Bengine.Cli/Bengine.Cli.csproj" />
     <Project Path="src/Bengine/Bengine.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Bengine.Tests/Bengine.Tests.csproj" />
+  </Folder>
 </Solution>

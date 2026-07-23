@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (.NET)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Bengine.slnx
+
+      - name: Build
+        run: dotnet build Bengine.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Bengine.slnx --configuration Release --no-build --verbosity normal
+
+  designer:
+    name: Designer (React)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: designer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: designer/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build (type-check + bundle)
+        run: npm run build
+
+      - name: Test
+        run: npm test
