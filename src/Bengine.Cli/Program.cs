@@ -5,14 +5,15 @@ using Bengine.Generators.Sql;
 using Bengine.Models;
 using Bengine.Models.Options;
 using Bengine.Models.Options.Validation;
+using Bengine.Parsing;
 using Bengine.Serialization;
 using Bengine.Validation;
 using Index = Bengine.Models.Index;
 
-// Consume a designer-produced schema.json when a path is supplied; otherwise
-// fall back to a small schema built inline from the AST.
+// Consume a designer-produced schema.json — or a raw .sql DDL script — when a
+// path is supplied; otherwise fall back to a small schema built inline.
 DatabaseSchema schema = args is [var inputPath, ..] && File.Exists(inputPath)
-    ? SchemaSerializer.Load(inputPath)
+    ? LoadSchema(inputPath)
     : new DatabaseSchema
 {
     Name = "shop",
@@ -155,4 +156,21 @@ foreach (var generator in codeGenerators)
 {
     Console.WriteLine($"========== {generator.Language} ==========");
     Console.WriteLine(generator.Generate(schema));
+}
+
+return;
+
+// Loads a schema from either a schema.json document or a raw .sql DDL script,
+// choosing by file extension. For SQL, the dialect is auto-detected.
+static DatabaseSchema LoadSchema(string path)
+{
+    if (path.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+    {
+        var import = SqlSchemaParser.Import(File.ReadAllText(path));
+        Console.WriteLine($"Imported {import.Schema.Tables.Count} table(s) from SQL (detected dialect: {import.Provider}).");
+        Console.WriteLine();
+        return import.Schema;
+    }
+
+    return SchemaSerializer.Load(path);
 }

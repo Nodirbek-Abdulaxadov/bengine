@@ -23,6 +23,12 @@ The single contract between the pieces is **schema.json**: the designer produces
 it, `Bengine.SchemaSerializer` deserializes it into the AST, and the generators
 consume the AST.
 
+The AST can also be built **from existing SQL**: `Bengine.Parsing` reverses the
+generators, parsing `CREATE TABLE` / `CREATE INDEX` / `ALTER TABLE` DDL into the
+AST and auto-detecting the source dialect (PostgreSQL, SQL Server, MySQL,
+SQLite). The API exposes this at `POST /api/import/sql`, and the designer's
+**Import SQL** button feeds pasted DDL straight onto the canvas.
+
 ## Run
 
 Build everything:
@@ -31,10 +37,12 @@ Build everything:
 dotnet build Bengine.slnx
 ```
 
-Generate from a schema.json with the CLI:
+Generate from a schema.json — or import a raw `.sql` DDL script (the dialect is
+auto-detected) — with the CLI:
 
 ```bash
 dotnet run --project src/Bengine.Cli -- examples/shop.schema.json
+dotnet run --project src/Bengine.Cli -- examples/postgres.sql
 ```
 
 Start the generation API (used by the designer):

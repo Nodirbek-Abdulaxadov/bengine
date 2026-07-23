@@ -1,0 +1,144 @@
+namespace Bengine.Parsing;
+
+using System.Collections.Generic;
+using Bengine.Enums;
+
+/// <summary>
+/// Infers the most likely <see cref="DatabaseProvider"/> behind a block of SQL
+/// DDL from dialect-specific spellings and syntax (for example
+/// <c>AUTO_INCREMENT</c> for MySQL, <c>SERIAL</c> for PostgreSQL, bracketed
+/// identifiers for SQL Server, and <c>AUTOINCREMENT</c> for SQLite). Detection is
+/// a best-effort heuristic; callers may override it with an explicit provider.
+/// </summary>
+public static class SqlDialectDetector
+{
+    private readonly record struct Signal(DatabaseProvider Provider, string Needle, int Weight);
+
+    private static readonly IReadOnlyList<Signal> Signals =
+    [
+        // PostgreSQL
+        new Signal(DatabaseProvider.PostgreSql, "serial", 3),
+        new Signal(DatabaseProvider.PostgreSql, "bigserial", 3),
+        new Signal(DatabaseProvider.PostgreSql, "smallserial", 3),
+        new Signal(DatabaseProvider.PostgreSql, "bytea", 3),
+        new Signal(DatabaseProvider.PostgreSql, "jsonb", 3),
+        new Signal(DatabaseProvider.PostgreSql, "timestamptz", 3),
+        new Signal(DatabaseProvider.PostgreSql, "with time zone", 2),
+        new Signal(DatabaseProvider.PostgreSql, "double precision", 2),
+        new Signal(DatabaseProvider.PostgreSql, "gen_random_uuid", 3),
+        new Signal(DatabaseProvider.PostgreSql, "nextval(", 2),
+        new Signal(DatabaseProvider.PostgreSql, "::", 2),
+        new Signal(DatabaseProvider.PostgreSql, "generated always as identity", 1),
+
+        // SQL Server
+        new Signal(DatabaseProvider.SqlServer, "nvarchar", 3),
+        new Signal(DatabaseProvider.SqlServer, "uniqueidentifier", 3),
+        new Signal(DatabaseProvider.SqlServer, "datetime2", 3),
+        new Signal(DatabaseProvider.SqlServer, "datetimeoffset", 3),
+        new Signal(DatabaseProvider.SqlServer, "identity(", 3),
+        new Signal(DatabaseProvider.SqlServer, "getdate()", 3),
+        new Signal(DatabaseProvider.SqlServer, "nonclustered", 2),
+        new Signal(DatabaseProvider.SqlServer, "clustered", 2),
+        new Signal(DatabaseProvider.SqlServer, "[dbo]", 3),
+        new Signal(DatabaseProvider.SqlServer, "(max)", 2),
+        new Signal(DatabaseProvider.SqlServer, "\ngo", 2),
+
+        // MySQL
+        new Signal(DatabaseProvider.MySql, "auto_increment", 3),
+        new Signal(DatabaseProvider.MySql, "engine=", 3),
+        new Signal(DatabaseProvider.MySql, "unsigned", 2),
+        new Signal(DatabaseProvider.MySql, "zerofill", 2),
+        new Signal(DatabaseProvider.MySql, "character set", 2),
+        new Signal(DatabaseProvider.MySql, "tinyint(1)", 2),
+        new Signal(DatabaseProvider.MySql, "longtext", 2),
+        new Signal(DatabaseProvider.MySql, "mediumtext", 2),
+        new Signal(DatabaseProvider.MySql, "on update current_timestamp", 2),
+        new Signal(DatabaseProvider.MySql, "enum(", 1),
+
+        // SQLite
+        new Signal(DatabaseProvider.Sqlite, "autoincrement", 3),
+        new Signal(DatabaseProvider.Sqlite, "without rowid", 3),
+        new Signal(DatabaseProvider.Sqlite, "pragma", 2),
+        new Signal(DatabaseProvider.Sqlite, "sqlite_", 2),
+        new Signal(DatabaseProvider.Sqlite, "integer primary key", 2),
+    ];
+
+    /// <summary>Detects the most likely provider for a block of SQL.</summary>
+    /// <param name="sql">The SQL text to inspect.</param>
+    /// <returns>The best-scoring provider; PostgreSQL is the default when no signal fires.</returns>
+    public static DatabaseProvider Detect(string sql)
+    {
+        var haystack = sql.ToLowerInvariant();
+
+        var scores = new Dictionary<DatabaseProvider, int>
+        {
+            [DatabaseProvider.PostgreSql] = 0,
+            [DatabaseProvider.SqlServer] = 0,
+            [DatabaseProvider.MySql] = 0,
+            [DatabaseProvider.Sqlite] = 0,
+        };
+
+        foreach (var signal in Signals)
+        {
+            var count = CountOccurrences(haystack, signal.Needle);
+            if (count > 0)
+            {
+                scores[signal.Provider] += count * signal.Weight;
+            }
+        }
+
+        // Delimiter styles are strong, distinctive tells.
+        scores[DatabaseProvider.MySql] += CountOccurrences(haystack, "`") * 2;
+        scores[DatabaseProvider.SqlServer] += CountBracketIdentifiers(haystack) * 2;
+
+        var best = DatabaseProvider.PostgreSql;
+        var bestScore = 0;
+        foreach (var (provider, score) in scores)
+        {
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = provider;
+            }
+        }
+
+        return best;
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+
+        return count;
+    }
+
+    // A rough count of [identifier] usages; distinguishes SQL Server brackets
+    // from a stray '[' by requiring a matching ']' on the same line.
+    private static int CountBracketIdentifiers(string haystack)
+    {
+        var count = 0;
+        for (var i = 0; i < haystack.Length; i++)
+        {
+            if (haystack[i] != '[')
+            {
+                continue;
+            }
+
+            var close = haystack.IndexOf(']', i + 1);
+            var newline = haystack.IndexOf('\n', i + 1);
+            if (close > i && (newline < 0 || close < newline))
+            {
+                count++;
+                i = close;
+            }
+        }
+
+        return count;
+    }
+}

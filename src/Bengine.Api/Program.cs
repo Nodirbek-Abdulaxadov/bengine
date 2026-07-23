@@ -1,9 +1,11 @@
+using System.Text.Json;
 using Bengine.Enums;
 using Bengine.Generators;
 using Bengine.Generators.Languages;
 using Bengine.Generators.Migrations;
 using Bengine.Generators.Sql;
 using Bengine.Models;
+using Bengine.Parsing;
 using Bengine.Serialization;
 using Bengine.Validation;
 
@@ -79,6 +81,50 @@ app.MapPost("/api/validate/{provider}", async (string provider, HttpRequest requ
     });
 });
 
+// --- Import endpoint. Parses SQL DDL into a schema.json document. ---
+app.MapPost("/api/import/sql", (ImportSqlRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Sql))
+    {
+        return Results.BadRequest(new { error = "Request body must contain SQL in the 'sql' field." });
+    }
+
+    DatabaseProvider? explicitProvider = null;
+    if (!string.IsNullOrWhiteSpace(request.Dialect)
+        && !request.Dialect.Equals("auto", StringComparison.OrdinalIgnoreCase))
+    {
+        if (!Enum.TryParse<DatabaseProvider>(request.Dialect, ignoreCase: true, out var parsed))
+        {
+            return Results.BadRequest(new { error = $"Unknown dialect '{request.Dialect}'." });
+        }
+
+        explicitProvider = parsed;
+    }
+
+    SqlImportResult result;
+    try
+    {
+        result = explicitProvider is { } provider
+            ? SqlSchemaParser.Import(request.Sql, provider)
+            : SqlSchemaParser.Import(request.Sql);
+    }
+    catch (SqlParseException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    // Serialize through the schema serializer so the document matches the exact
+    // schema.json contract the designer consumes, then embed it verbatim.
+    using var document = JsonDocument.Parse(SchemaSerializer.ToJson(result.Schema));
+    return Results.Json(new
+    {
+        dialect = result.Provider.ToString(),
+        detected = result.Detected,
+        tableCount = result.Schema.Tables.Count,
+        schema = document.RootElement.Clone(),
+    });
+});
+
 app.Run();
 return;
 
@@ -128,3 +174,8 @@ static ICodeGenerator CodeGeneratorFor(Language language) => language switch
     Language.Php => new PhpGenerator(),
     _ => throw new ArgumentOutOfRangeException(nameof(language)),
 };
+
+/// <summary>The body of a SQL import request: the SQL text and an optional dialect override ("auto" or empty to auto-detect).</summary>
+/// <param name="Sql">The SQL DDL to parse.</param>
+/// <param name="Dialect">An optional provider name to force the dialect; auto-detected when omitted.</param>
+record ImportSqlRequest(string? Sql, string? Dialect);

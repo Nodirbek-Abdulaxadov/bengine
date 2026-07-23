@@ -1,15 +1,17 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { SchemaDocument } from '../schema/contract';
 import { redo, undo, useHistory } from '../state/history';
 import { fromSchemaDocument, toSchemaDocument } from '../state/mapping';
 import { useDesigner } from '../state/store';
+import { ImportSqlDialog } from './ImportSqlDialog';
 
-/** Top bar: schema name, add-table, and schema.json import / export. */
+/** Top bar: schema name, add-table, and schema.json / SQL import + export. */
 export function Toolbar() {
   const fileInput = useRef<HTMLInputElement>(null);
   const schemaName = useDesigner((s) => s.schemaName);
   const { setSchemaName, addTable, replaceAll } = useDesigner();
   const { canUndo, canRedo } = useHistory();
+  const [sqlImportOpen, setSqlImportOpen] = useState(false);
 
   const exportJson = () => {
     const doc = toSchemaDocument(useDesigner.getState());
@@ -45,7 +47,8 @@ export function Toolbar() {
         ↷
       </button>
       <div className="toolbar__spacer" />
-      <button onClick={() => fileInput.current?.click()}>Import</button>
+      <button onClick={() => fileInput.current?.click()}>Import JSON</button>
+      <button onClick={() => setSqlImportOpen(true)}>Import SQL</button>
       <button className="primary" onClick={exportJson}>
         Export schema.json
       </button>
@@ -62,6 +65,7 @@ export function Toolbar() {
           e.target.value = '';
         }}
       />
+      {sqlImportOpen && <ImportSqlDialog onClose={() => setSqlImportOpen(false)} />}
     </header>
   );
 }

@@ -37,7 +37,11 @@ dotnet run --project ../src/Bengine.Api    # http://localhost:5099
 - **↶ / ↷** — undo / redo (structural edits). The design autosaves to
   `localStorage` and restores on reload.
 - **Export schema.json** — download the document.
-- **Import** — load an existing `schema.json` back into the canvas.
+- **Import JSON** — load an existing `schema.json` back into the canvas.
+- **Import SQL** — paste raw SQL DDL (or load a `.sql` file). The Bengine backend
+  (localhost) detects the dialect — PostgreSQL, SQL Server, MySQL, or SQLite — or
+  you can force one, then parses `CREATE TABLE` / `CREATE INDEX` / `ALTER TABLE`
+  into the schema and loads it onto the canvas. Requires the backend API running.
 
 Everything the Bengine C# AST supports is editable here; the exported document
 covers the full model.
