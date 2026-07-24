@@ -13,6 +13,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { TableNode, type TableNodeType } from './components/TableNode';
 import { RightPanel } from './components/RightPanel';
+import { Toasts } from './components/Toasts';
 import { Toolbar } from './components/Toolbar';
 import { useDesigner } from './state/store';
 
@@ -44,7 +45,14 @@ function Canvas() {
           sourceHandle: pair.from,
           targetHandle: pair.to,
           label: i === 0 ? fk.onDelete : undefined,
-          markerEnd: { type: MarkerType.ArrowClosed },
+          markerEnd: { type: MarkerType.ArrowClosed, color: '#e0862f' },
+          // Explicit inline colors so the diagram survives PNG/PDF capture,
+          // which cannot resolve React Flow's CSS-variable edge styling.
+          style: { stroke: '#e0862f', strokeWidth: 1.5 },
+          labelStyle: { fill: '#e6ebf5', fontSize: 11 },
+          labelBgStyle: { fill: '#1f2738' },
+          labelBgPadding: [6, 3] as [number, number],
+          labelBgBorderRadius: 4,
         })),
       ),
     [foreignKeys],
@@ -105,6 +113,7 @@ export default function App() {
         </ReactFlowProvider>
         <RightPanel />
       </div>
+      <Toasts />
     </div>
   );
 }

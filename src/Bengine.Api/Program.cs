@@ -12,6 +12,12 @@ using Bengine.Validation;
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://localhost:5099");
 
+// Serialize enums by name so responses carry "Error"/"Warning" and provider /
+// language names rather than opaque numbers.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(
+        new System.Text.Json.Serialization.JsonStringEnumConverter()));
+
 const string DevCors = "designer";
 builder.Services.AddCors(options =>
     options.AddPolicy(DevCors, policy =>

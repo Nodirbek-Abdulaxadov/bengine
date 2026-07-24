@@ -3,7 +3,7 @@ import type { SchemaDocument } from '../schema/contract';
 export interface SqlResult {
   provider: string;
   valid: boolean;
-  messages: { severity: string; code: string; message: string; path: string }[];
+  messages: { severity: string | number; code: string; message: string; path: string }[];
   sql: string;
 }
 

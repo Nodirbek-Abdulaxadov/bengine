@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react';
 import type { SchemaDocument } from '../schema/contract';
 import { redo, undo, useHistory } from '../state/history';
-import { fromSchemaDocument, toSchemaDocument } from '../state/mapping';
+import { fromSchemaDocument } from '../state/mapping';
 import { useDesigner } from '../state/store';
+import { toast } from '../state/toast';
+import { ExportMenu } from './ExportMenu';
 import { ImportSqlDialog } from './ImportSqlDialog';
 
-/** Top bar: schema name, add-table, and schema.json / SQL import + export. */
+/** Top bar: schema name, add-table, undo/redo, import, and the export menu. */
 export function Toolbar() {
   const fileInput = useRef<HTMLInputElement>(null);
   const schemaName = useDesigner((s) => s.schemaName);
@@ -13,21 +15,15 @@ export function Toolbar() {
   const { canUndo, canRedo } = useHistory();
   const [sqlImportOpen, setSqlImportOpen] = useState(false);
 
-  const exportJson = () => {
-    const doc = toSchemaDocument(useDesigner.getState());
-    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'schema.json';
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
   const importJson = async (file: File) => {
-    const text = await file.text();
-    const doc = JSON.parse(text) as SchemaDocument;
-    replaceAll(fromSchemaDocument(doc));
+    try {
+      const text = await file.text();
+      const doc = JSON.parse(text) as SchemaDocument;
+      replaceAll(fromSchemaDocument(doc));
+      toast.success(`${file.name} yuklandi`);
+    } catch (error) {
+      toast.error('schema.json o‘qilmadi', [(error as Error).message]);
+    }
   };
 
   return (
@@ -46,12 +42,13 @@ export function Toolbar() {
       <button onClick={redo} disabled={!canRedo} title="Redo">
         ↷
       </button>
+
       <div className="toolbar__spacer" />
+
       <button onClick={() => fileInput.current?.click()}>Import JSON</button>
       <button onClick={() => setSqlImportOpen(true)}>Import SQL</button>
-      <button className="primary" onClick={exportJson}>
-        Export schema.json
-      </button>
+      <ExportMenu />
+
       <input
         ref={fileInput}
         type="file"
