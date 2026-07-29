@@ -23,6 +23,10 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
     private readonly string _sql;
     private readonly IReadOnlyList<SqlToken> _tokens;
     private readonly DatabaseProvider _provider;
+
+    // User-defined type names declared via CREATE TYPE / CREATE DOMAIN. Columns
+    // of such a type resolve to Text since the AST has no logical enum type.
+    private readonly HashSet<string> _customTypes = new(StringComparer.OrdinalIgnoreCase);
     private int _pos;
 
     /// <summary>Creates a reusable parser instance; each <see cref="Parse"/> call parses independently.</summary>
@@ -155,6 +159,17 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
         if (Current.IsKeyword("INDEX"))
         {
             ParseCreateIndex(builders, IndexType.NonUnique);
+            return;
+        }
+
+        // CREATE TYPE / CREATE DOMAIN declares a user-defined type (commonly a
+        // PostgreSQL enum). Record its name so columns using it resolve to Text.
+        if (Current.IsKeyword("TYPE") || Current.IsKeyword("DOMAIN"))
+        {
+            Advance();
+            var (_, typeName) = ParseQualifiedName();
+            _customTypes.Add(typeName);
+            SkipStatement();
             return;
         }
 
@@ -662,6 +677,13 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
                 ? DbDataType.Blob
                 : DbDataType.Text;
             return (new ColumnTypeOptions { DataType = large, IsUnsigned = unsigned }, false);
+        }
+
+        // A column typed with a user-defined type (enum/domain) has no logical
+        // equivalent in the AST, so represent it as Text.
+        if (_customTypes.Contains(name))
+        {
+            return (new ColumnTypeOptions { DataType = DbDataType.Text, IsUnsigned = unsigned }, false);
         }
 
         var resolved = SqlTypeResolver.Resolve(_provider, name, firstArgument);

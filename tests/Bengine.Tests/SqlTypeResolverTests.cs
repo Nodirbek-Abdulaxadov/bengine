@@ -20,6 +20,13 @@ public class SqlTypeResolverTests
     [InlineData("jsonb", DbDataType.JsonBinary)]
     [InlineData("uniqueidentifier", DbDataType.Uuid)]
     [InlineData("timestamptz", DbDataType.TimestampTz)]
+    [InlineData("inet", DbDataType.Text)]
+    [InlineData("cidr", DbDataType.Text)]
+    [InlineData("interval", DbDataType.Text)]
+    [InlineData("tsvector", DbDataType.Text)]
+    [InlineData("enum", DbDataType.Text)]
+    [InlineData("set", DbDataType.Text)]
+    [InlineData("year", DbDataType.SmallInt)]
     public void Resolves_common_aliases(string native, DbDataType expected)
     {
         var resolved = SqlTypeResolver.Resolve(DatabaseProvider.PostgreSql, native, null);

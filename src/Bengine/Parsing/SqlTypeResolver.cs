@@ -119,6 +119,36 @@ public static class SqlTypeResolver
             ["json"] = DbDataType.Json,
             ["jsonb"] = DbDataType.JsonBinary,
             ["xml"] = DbDataType.Xml,
+
+            ["year"] = DbDataType.SmallInt,
+
+            // MySQL inline enumerations (declared as enum('a','b') / set('a','b')
+            // directly on the column) have no logical equivalent → Text.
+            ["enum"] = DbDataType.Text,
+            ["set"] = DbDataType.Text,
+
+            // Provider-specific and extension types with no dedicated logical
+            // equivalent are represented as Text (their canonical text form).
+            ["inet"] = DbDataType.Text,
+            ["cidr"] = DbDataType.Text,
+            ["macaddr"] = DbDataType.Text,
+            ["macaddr8"] = DbDataType.Text,
+            ["interval"] = DbDataType.Text,
+            ["tsvector"] = DbDataType.Text,
+            ["tsquery"] = DbDataType.Text,
+            ["hstore"] = DbDataType.Text,
+            ["ltree"] = DbDataType.Text,
+            ["varbit"] = DbDataType.Text,
+            ["bit varying"] = DbDataType.Text,
+            ["geometry"] = DbDataType.Text,
+            ["geography"] = DbDataType.Text,
+            ["point"] = DbDataType.Text,
+            ["line"] = DbDataType.Text,
+            ["lseg"] = DbDataType.Text,
+            ["box"] = DbDataType.Text,
+            ["path"] = DbDataType.Text,
+            ["polygon"] = DbDataType.Text,
+            ["circle"] = DbDataType.Text,
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Resolves a native type name for a provider.</summary>
