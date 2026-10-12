@@ -4,6 +4,8 @@ using System.Diagnostics;
 using Avalonia;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Controls;
+using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Bengine.Enums;
 using Bengine.Introspection.Servers;
@@ -82,6 +84,43 @@ public sealed class StudioUiTests
 
         await WalkAsync(store, "pg", ["Databases", parts[2], "Schemas", "public", "Tables"], "Users", parts[2],
             "SELECT table_schema, count(*) AS tables\nFROM information_schema.tables\nGROUP BY 1\nORDER BY 2 DESC;");
+    }
+
+    [AvaloniaFact]
+    public void Imports_datagrip_data_sources_from_a_project_folder()
+    {
+        var dir = Directory.CreateTempSubdirectory("bengine_studio_dg_").FullName;
+        var idea = Directory.CreateDirectory(Path.Combine(dir, "project", ".idea")).FullName;
+        File.WriteAllText(Path.Combine(idea, "dataSources.xml"), """
+            <project version="4">
+              <component name="DataSourceManagerImpl">
+                <data-source source="LOCAL" name="demo-pg" group="Demo" uuid="u1">
+                  <jdbc-url>jdbc:postgresql://localhost:5433/postgres</jdbc-url>
+                </data-source>
+                <data-source source="LOCAL" name="demo-oracle" uuid="u2">
+                  <jdbc-url>jdbc:oracle:thin:@h:1521:X</jdbc-url>
+                </data-source>
+              </component>
+            </project>
+            """);
+        var store = new ServerStore(Path.Combine(dir, "servers.json"));
+        var dialog = new ImportDialog(store);
+        dialog.Show();
+
+        dialog.FindControl<Avalonia.Controls.Primitives.TabStrip>("Source")!.SelectedIndex = 1;
+        dialog.FindControl<Avalonia.Controls.TextBox>("PathBox")!.Text = Path.Combine(dir, "project");
+        var scan = dialog.GetLogicalDescendants().OfType<Avalonia.Controls.Button>().Single(b => Equals(b.Content, "Scan"));
+        scan.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+
+        var import = dialog.FindControl<Avalonia.Controls.Button>("ImportButton")!;
+        Assert.True(import.IsEnabled);
+        Assert.Contains("oracle", dialog.FindControl<Avalonia.Controls.TextBlock>("Skipped")!.Text);
+        Shot(dialog, "import-datagrip");
+
+        import.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+        var server = Assert.Single(store.List());
+        Assert.Equal(("demo-pg", "Demo", 5433), (server.Name, server.Group, server.Port));
     }
 
     private static async Task WalkAsync(ServerStore store, string prefix, string[] path, string table, string database, string sql)

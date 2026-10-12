@@ -145,7 +145,7 @@ public partial class MainWindow : Window, IDialogService
         {
             case "ServerGroup":
                 Add("Register Server…", () => vm.RegisterServerCommand.Execute(null));
-                Add("Import from pgAdmin…", () => vm.ImportPgAdminCommand.Execute(null));
+                Add("Import Servers (pgAdmin / DataGrip)…", () => vm.ImportPgAdminCommand.Execute(null));
                 Add("Refresh", vm.ReloadServers);
                 break;
             case "Server":

@@ -99,10 +99,15 @@ and SQLite use the subset of the hierarchy that applies to them.
 
 Servers are saved in `~/.config/bengine/servers.json` (owner-only permissions;
 `BENGINE_SERVERS_FILE` overrides the path), shared by the web and desktop
-explorers, and can be **imported from a local pgAdmin 4**. pgAdmin encrypts its
-saved passwords, so imported servers prompt once on first connect ("Save
+explorers, and can be **imported from a local pgAdmin 4 or from DataGrip** (and
+the other JetBrains IDEs with the Database Tools plugin, such as Rider and
+IntelliJ IDEA): the IDEs' global `options/dataSources.xml`, projects under
+`~/DataGripProjects`, or any project's `.idea/dataSources.xml`. Neither tool
+stores passwords in a readable form (pgAdmin encrypts them; DataGrip keeps them
+in the OS keyring), so imported servers prompt once on first connect ("Save
 password" stores it in the file; otherwise it is kept in memory for the
-session).
+session). Drivers Bengine does not support, such as Oracle, are listed as
+skipped.
 
 Two front ends drive the engine, both laid out like pgAdmin — the Object
 Explorer on the left; Properties and SQL for the selected node; closable
@@ -113,7 +118,7 @@ column names):
 
 - **Web** — the `designer`'s **Database Explorer** tab, over the API:
   `/api/servers` (list, add/edit, remove, test, connect, disconnect, pgAdmin
-  import), `/api/tree/children` and `/api/tree/properties`, and the per-database
+  and DataGrip import), `/api/tree/children` and `/api/tree/properties`, and the per-database
   `/api/db/*` endpoints (`/data`, `/table`, `/query`, `/row/insert`,
   `/row/update`, `/row/delete`, `/export`, …), which take either a registered
   `serverId` + `database` or a raw `provider` + `connectionString`.

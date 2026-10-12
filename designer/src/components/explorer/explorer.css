@@ -282,3 +282,5 @@ thead .ex-rowhead { z-index: 4; }
   .dlg__field { grid-template-columns: 1fr; }
   .dlg__label { text-align: left; }
 }
+.dlg__row { display: flex; gap: 8px; margin-bottom: 10px; }
+.dlg__path { word-break: break-all; }

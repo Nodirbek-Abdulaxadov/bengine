@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Provider } from '../../api/db';
 import {
+  datagripImport,
+  datagripPreview,
   pgadminImport,
   pgadminPreview,
   saveServer,
@@ -344,24 +346,84 @@ export function PasswordPrompt({
   );
 }
 
-/** Lists the servers registered in the local pgAdmin and imports the new ones. */
+type ImportRow = {
+  key: string;
+  name: string;
+  group: string;
+  provider: string;
+  endpoint: string;
+  database: string | null;
+  user: string | null;
+  exists: boolean;
+};
+
+/** Imports registered servers from pgAdmin 4 or DataGrip (and other JetBrains IDEs). */
 export function ImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (count: number) => void }) {
-  const [state, setState] = useState<{ found: boolean; path?: string; servers: PgAdminServer[] } | null>(null);
+  const [source, setSource] = useState<'pgadmin' | 'datagrip'>('pgadmin');
+  const [path, setPath] = useState('');
+  const [rows, setRows] = useState<ImportRow[] | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState<{ name: string; reason: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    pgadminPreview()
-      .then(setState)
-      .catch((e: Error) => setError(e.message));
-  }, []);
+  const scan = async (from: 'pgadmin' | 'datagrip', extraPath?: string) => {
+    setRows(null);
+    setError(null);
+    setSkipped([]);
+    try {
+      if (from === 'pgadmin') {
+        const r = await pgadminPreview();
+        setInfo(r.found ? (r.path ?? null) : 'No pgAdmin 4 configuration was found on this machine.');
+        setRows(
+          r.servers.map((s: PgAdminServer) => ({
+            key: `${s.name}@${s.host}:${s.port}`,
+            name: s.name,
+            group: s.group,
+            provider: 'PostgreSql',
+            endpoint: `${s.host}:${s.port}`,
+            database: s.maintenanceDatabase,
+            user: s.username,
+            exists: s.exists,
+          })),
+        );
+      } else {
+        const r = await datagripPreview(extraPath);
+        setInfo(
+          r.files.length === 0
+            ? 'No DataGrip / JetBrains data sources were found. Give a project folder below to scan it.'
+            : `${r.files.length} file(s): ${r.files.join(' · ')}`,
+        );
+        setSkipped(r.skipped);
+        setRows(
+          r.servers.map((s) => ({
+            key: `${s.name}@${s.endpoint}@${s.sourceFile}`,
+            name: s.name,
+            group: s.group,
+            provider: s.provider,
+            endpoint: s.endpoint,
+            database: s.maintenanceDatabase,
+            user: s.username,
+            exists: s.exists,
+          })),
+        );
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
-  const fresh = state?.servers.filter((s) => !s.exists) ?? [];
+  useEffect(() => {
+    void scan(source, path);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source]);
+
+  const fresh = rows?.filter((r) => !r.exists) ?? [];
 
   const run = async () => {
     setBusy(true);
     try {
-      const result = await pgadminImport();
+      const result = source === 'pgadmin' ? await pgadminImport() : await datagripImport(path);
       onImported(result.imported);
     } catch (e) {
       setError((e as Error).message);
@@ -371,12 +433,19 @@ export function ImportDialog({ onClose, onImported }: { onClose: () => void; onI
 
   return (
     <Modal
-      title="Import Servers from pgAdmin"
-      width={600}
+      title="Import Servers"
+      width={720}
       onClose={onClose}
       footer={
         <>
-          {error ? <span className="dlg__err">{error}</span> : <span className="dlg__hint">Passwords are not imported — pgAdmin encrypts them. You will be asked on first connect.</span>}
+          {error ? (
+            <span className="dlg__err">{error}</span>
+          ) : (
+            <span className="dlg__hint">
+              Passwords are not imported — {source === 'pgadmin' ? 'pgAdmin encrypts them' : 'DataGrip keeps them in the OS keyring'}. You will be
+              asked on first connect.
+            </span>
+          )}
           <div className="dlg__actions">
             <button className="ex-btn ex-btn--ghost" onClick={onClose}>
               Cancel
@@ -388,38 +457,63 @@ export function ImportDialog({ onClose, onImported }: { onClose: () => void; onI
         </>
       }
     >
-      {!state && !error ? <p className="dlg__text">Looking for pgAdmin…</p> : null}
-      {state && !state.found ? <p className="dlg__text">No pgAdmin 4 configuration was found on this machine.</p> : null}
-      {state?.found ? (
-        <>
-          <p className="dlg__hint">{state.path}</p>
-          <table className="ex-deftable">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Group</th>
-                <th>Host</th>
-                <th>Database</th>
-                <th>User</th>
-                <th />
+      <div className="dlg__tabs">
+        <button className={`dlg__tab ${source === 'pgadmin' ? 'dlg__tab--active' : ''}`} onClick={() => setSource('pgadmin')}>
+          pgAdmin 4
+        </button>
+        <button className={`dlg__tab ${source === 'datagrip' ? 'dlg__tab--active' : ''}`} onClick={() => setSource('datagrip')}>
+          DataGrip / JetBrains
+        </button>
+      </div>
+      {source === 'datagrip' ? (
+        <div className="dlg__row">
+          <input
+            className="ex-input"
+            style={{ flex: 1 }}
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void scan('datagrip', path)}
+            placeholder="Optional: a project folder (its .idea/dataSources.xml is read)"
+          />
+          <button className="ex-btn ex-btn--ghost" onClick={() => void scan('datagrip', path)}>
+            Scan
+          </button>
+        </div>
+      ) : null}
+      {info ? <p className="dlg__hint dlg__path">{info}</p> : null}
+      {!rows && !error ? <p className="dlg__text">Looking for configurations…</p> : null}
+      {rows && rows.length > 0 ? (
+        <table className="ex-deftable">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Group</th>
+              <th>Type</th>
+              <th>Endpoint</th>
+              <th>Database</th>
+              <th>User</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key} style={{ opacity: r.exists ? 0.5 : 1 }}>
+                <td>{r.name}</td>
+                <td>{r.group}</td>
+                <td>{r.provider}</td>
+                <td>{r.endpoint}</td>
+                <td>{r.database}</td>
+                <td>{r.user}</td>
+                <td>{r.exists ? 'already added' : 'new'}</td>
               </tr>
-            </thead>
-            <tbody>
-              {state.servers.map((s) => (
-                <tr key={`${s.name}@${s.host}:${s.port}`} style={{ opacity: s.exists ? 0.5 : 1 }}>
-                  <td>{s.name}</td>
-                  <td>{s.group}</td>
-                  <td>
-                    {s.host}:{s.port}
-                  </td>
-                  <td>{s.maintenanceDatabase}</td>
-                  <td>{s.username}</td>
-                  <td>{s.exists ? 'already added' : 'new'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      {skipped.length > 0 ? (
+        <p className="dlg__hint">
+          Skipped: {skipped.map((s) => `${s.name} (${s.reason})`).join(', ')}
+        </p>
       ) : null}
     </Modal>
   );

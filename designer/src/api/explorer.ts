@@ -100,6 +100,26 @@ export const pgadminPreview = () =>
   send<{ found: boolean; path?: string; servers: PgAdminServer[] }>('GET', '/api/servers/pgadmin');
 export const pgadminImport = () =>
   postJson<{ imported: number; servers: ServerDto[] }>('/api/servers/pgadmin/import', {});
+/** A data source found in DataGrip / JetBrains IDE configuration. */
+export interface DataGripServer {
+  name: string;
+  group: string;
+  provider: Provider;
+  endpoint: string;
+  maintenanceDatabase: string | null;
+  username: string | null;
+  sourceFile: string;
+  exists: boolean;
+}
+
+const pathQuery = (path?: string) => (path?.trim() ? `?path=${encodeURIComponent(path.trim())}` : '');
+export const datagripPreview = (path?: string) =>
+  send<{ files: string[]; servers: DataGripServer[]; skipped: { name: string; sourceFile: string; reason: string }[] }>(
+    'GET',
+    `/api/servers/datagrip${pathQuery(path)}`,
+  );
+export const datagripImport = (path?: string) =>
+  postJson<{ imported: number; servers: ServerDto[] }>(`/api/servers/datagrip/import${pathQuery(path)}`, {});
 export const treeChildren = (serverId: string, node: NodeRef) =>
   postJson<TreeNodeDto[]>('/api/tree/children', { serverId, node: stripRef(node) });
 export const treeProperties = (serverId: string, node: NodeRef) =>

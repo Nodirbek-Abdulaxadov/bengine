@@ -46,7 +46,7 @@
           <DockPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2">
               <Button Classes="tool" Content="＋" ToolTip.Tip="Register Server" Command="{Binding RegisterServerCommand}" />
-              <Button Classes="tool" Content="⇩" ToolTip.Tip="Import from pgAdmin" Command="{Binding ImportPgAdminCommand}" />
+              <Button Classes="tool" Content="⇩" ToolTip.Tip="Import from pgAdmin / DataGrip" Command="{Binding ImportPgAdminCommand}" />
               <Button Classes="tool" Content="⟳" ToolTip.Tip="Refresh (F5)" Command="{Binding RefreshCommand}" />
               <Button Classes="tool" Content="⌨" ToolTip.Tip="Query Tool" Command="{Binding QueryToolCommand}" />
             </StackPanel>
@@ -80,7 +80,7 @@
           <StackPanel Spacing="10" Margin="18" IsVisible="{Binding !HasServers}">
             <TextBlock Classes="dim" TextWrapping="Wrap" Text="No servers registered yet." />
             <Button Classes="primary" Content="Register Server" Command="{Binding RegisterServerCommand}" />
-            <Button Classes="ghost" Content="Import from pgAdmin" Command="{Binding ImportPgAdminCommand}" />
+            <Button Classes="ghost" Content="Import from pgAdmin / DataGrip" Command="{Binding ImportPgAdminCommand}" />
           </StackPanel>
         </Panel>
       </DockPanel>

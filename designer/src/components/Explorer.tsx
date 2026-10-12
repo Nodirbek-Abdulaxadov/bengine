@@ -387,7 +387,7 @@ function Welcome({ onRegister, onImport }: { onRegister: () => void; onImport: (
           Register Server
         </button>
         <button className="ex-btn ex-btn--ghost" onClick={onImport}>
-          Import from pgAdmin
+          Import from pgAdmin / DataGrip
         </button>
       </div>
       <p className="ex-dim">Select any object in the tree to see its properties and SQL. Double-click a table to view its data.</p>

@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Bengine.Studio.Views.ImportDialog"
-        Title="Import Servers from pgAdmin" Width="680" Height="420"
+        Title="Import Servers" Width="760" Height="480"
         WindowStartupLocation="CenterOwner" Background="{StaticResource Panel}" FontSize="13">
   <DockPanel>
     <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="16,12">
@@ -10,18 +10,27 @@
           <Button Classes="ghost" Content="Cancel" Click="OnCancel" />
           <Button x:Name="ImportButton" Classes="primary" Content="Import" Click="OnImport" />
         </StackPanel>
-        <TextBlock Classes="dim" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="400"
-                   Text="Passwords are not imported — pgAdmin encrypts them. You will be asked on first connect." />
+        <TextBlock x:Name="Hint" Classes="dim" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="440" />
       </DockPanel>
     </Border>
-    <TextBlock x:Name="Info" DockPanel.Dock="Top" Classes="dim" Margin="16,12,16,4" TextWrapping="Wrap" />
+    <TabStrip x:Name="Source" DockPanel.Dock="Top" Margin="12,8,12,0" SelectionChanged="OnSourceChanged">
+      <TabStripItem Content="pgAdmin 4" />
+      <TabStripItem Content="DataGrip / JetBrains" />
+    </TabStrip>
+    <DockPanel x:Name="PathRow" DockPanel.Dock="Top" Margin="16,8,16,0" IsVisible="False">
+      <Button DockPanel.Dock="Right" Classes="ghost" Content="Scan" Margin="8,0,0,0" Click="OnScan" />
+      <TextBox x:Name="PathBox" Watermark="Optional: a project folder (its .idea/dataSources.xml is read)" />
+    </DockPanel>
+    <TextBlock x:Name="Info" DockPanel.Dock="Top" Classes="dim" FontSize="12" Margin="16,8,16,4" TextWrapping="Wrap" />
+    <TextBlock x:Name="Skipped" DockPanel.Dock="Bottom" Classes="faint" FontSize="12" Margin="16,0,16,8" TextWrapping="Wrap" />
     <DataGrid x:Name="Grid" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="Column" Margin="8">
       <DataGrid.Columns>
         <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
         <DataGridTextColumn Header="Group" Binding="{Binding Group}" Width="Auto" />
-        <DataGridTextColumn Header="Host" Binding="{Binding Endpoint}" Width="*" />
-        <DataGridTextColumn Header="Database" Binding="{Binding MaintenanceDatabase}" Width="Auto" />
-        <DataGridTextColumn Header="User" Binding="{Binding Username}" Width="Auto" />
+        <DataGridTextColumn Header="Type" Binding="{Binding Provider}" Width="Auto" />
+        <DataGridTextColumn Header="Endpoint" Binding="{Binding Endpoint}" Width="*" />
+        <DataGridTextColumn Header="Database" Binding="{Binding Database}" Width="Auto" />
+        <DataGridTextColumn Header="User" Binding="{Binding User}" Width="Auto" />
         <DataGridTextColumn Header="" Binding="{Binding State}" Width="Auto" />
       </DataGrid.Columns>
     </DataGrid>

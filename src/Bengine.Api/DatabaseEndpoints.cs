@@ -135,6 +135,48 @@ public static class DatabaseEndpoints
             }
         });
 
+        // DataGrip (and Rider/IntelliJ) data sources: the IDEs' global options plus
+        // ~/DataGripProjects, and optionally one project directory given by ?path=.
+        app.MapGet("/api/servers/datagrip", (string? path, ServerRegistry registry) =>
+        {
+            var existing = registry.Store.List();
+            var result = DataGripImporter.Read(DataGripImporter.FindConfigFiles(path));
+            return Results.Json(new
+            {
+                files = result.Files,
+                servers = result.Servers.Select(c => new
+                {
+                    c.Server.Name,
+                    c.Server.Group,
+                    provider = c.Server.Provider.ToString(),
+                    c.Server.Endpoint,
+                    c.Server.MaintenanceDatabase,
+                    c.Server.Username,
+                    c.SourceFile,
+                    exists = existing.Any(e => SameEndpoint(e, c.Server)),
+                }),
+                skipped = result.Skipped,
+            });
+        });
+
+        app.MapPost("/api/servers/datagrip/import", (string? path, ServerRegistry registry) =>
+        {
+            var existing = registry.Store.List();
+            var imported = 0;
+            foreach (var candidate in DataGripImporter.Read(DataGripImporter.FindConfigFiles(path)).Servers)
+            {
+                if (existing.Any(e => SameEndpoint(e, candidate.Server)))
+                {
+                    continue;
+                }
+
+                registry.Store.Upsert(candidate.Server);
+                imported++;
+            }
+
+            return Results.Json(new { imported, servers = registry.Store.List().Select(s => ToDto(s, registry)) });
+        });
+
         app.MapPost("/api/servers/pgadmin/import", (ServerRegistry registry) =>
         {
             try

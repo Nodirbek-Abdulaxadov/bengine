@@ -304,7 +304,7 @@ export function ObjectTree({
     const items: MenuItem[] = [];
     if (row.kind === 'group') {
       items.push({ label: 'Register Server…', action: onRegister });
-      items.push({ label: 'Import from pgAdmin…', action: onImport });
+      items.push({ label: 'Import Servers (pgAdmin / DataGrip)…', action: onImport });
       items.push({ label: 'Refresh', action: () => void refreshServers() });
     } else {
       const { server, node } = row.located!;
@@ -353,7 +353,7 @@ export function ObjectTree({
         <button className="ot__tool" title="Register server" onClick={onRegister}>
           ＋
         </button>
-        <button className="ot__tool" title="Import from pgAdmin" onClick={onImport}>
+        <button className="ot__tool" title="Import servers from pgAdmin or DataGrip" onClick={onImport}>
           ⇩
         </button>
         <button
@@ -380,7 +380,7 @@ export function ObjectTree({
               Register Server
             </button>
             <button className="ex-btn ex-btn--ghost" onClick={onImport}>
-              Import from pgAdmin
+              Import from pgAdmin / DataGrip
             </button>
           </div>
         ) : null}
