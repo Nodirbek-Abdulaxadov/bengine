@@ -108,7 +108,9 @@ jobs:
           chmod +x "$APP/Contents/MacOS/bengine-studio"
           ln -s /Applications dist/Applications
           ARCH_NAME=$([[ "${{ matrix.rid }}" == osx-arm64 ]] && echo arm64 || echo x64)
-          hdiutil create -volname "Bengine Studio" -srcfolder dist -ov -format UDZO "packages/BengineStudio-${VERSION}-${ARCH_NAME}.dmg"
+          # hdiutil's own size estimate for -srcfolder can come up short ("No space left on device"); size it explicitly.
+          SIZE_MB=$(( $(du -sm dist | cut -f1) + 64 ))
+          hdiutil create -volname "Bengine Studio" -srcfolder dist -size "${SIZE_MB}m" -ov -format UDZO "packages/BengineStudio-${VERSION}-${ARCH_NAME}.dmg"
 
       - uses: actions/upload-artifact@v4
         with:
