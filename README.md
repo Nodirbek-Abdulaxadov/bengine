@@ -143,7 +143,7 @@ Build everything:
 ```bash
 dotnet build Bengine.slnx
 ```
-endi
+
 Generate from a schema.json — or import a raw `.sql` DDL script (the dialect is
 auto-detected) — with the CLI:
 
