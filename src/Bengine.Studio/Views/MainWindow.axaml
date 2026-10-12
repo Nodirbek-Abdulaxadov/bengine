@@ -1,0 +1,105 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Bengine.Studio.ViewModels"
+        xmlns:v="clr-namespace:Bengine.Studio.Views"
+        xmlns:c="clr-namespace:Bengine.Studio.Controls"
+        x:Class="Bengine.Studio.Views.MainWindow"
+        x:DataType="vm:ExplorerViewModel"
+        Width="1440" Height="900" MinWidth="900" MinHeight="560"
+        FontSize="13"
+        Background="{StaticResource Bg}"
+        Title="Bengine Studio">
+
+  <Window.DataTemplates>
+    <DataTemplate DataType="vm:PropertiesDocumentViewModel"><v:PropertiesView /></DataTemplate>
+    <DataTemplate DataType="vm:SqlDocumentViewModel"><v:SqlView /></DataTemplate>
+    <DataTemplate DataType="vm:DataDocumentViewModel"><v:DataView /></DataTemplate>
+    <DataTemplate DataType="vm:QueryDocumentViewModel"><v:QueryView /></DataTemplate>
+  </Window.DataTemplates>
+
+  <Window.Styles>
+    <Style Selector="TreeViewItem">
+      <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" x:DataType="vm:TreeItemViewModel" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="TabControl.workspace > TabItem">
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="12,0" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel>
+    <!-- Status bar -->
+    <Border DockPanel.Dock="Bottom" Background="#11161e" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,1,0,0" Padding="10,4">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Right" Classes="faint" Text="{Binding StorePath}" />
+        <TextBlock Classes="dim" Text="{Binding Status}" />
+      </DockPanel>
+    </Border>
+
+    <Grid ColumnDefinitions="340,4,*">
+      <!-- Object Explorer -->
+      <DockPanel Grid.Column="0" Background="{StaticResource Panel}">
+        <Border DockPanel.Dock="Top" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,0,0,1" Padding="12,6,6,6">
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2">
+              <Button Classes="tool" Content="＋" ToolTip.Tip="Register Server" Command="{Binding RegisterServerCommand}" />
+              <Button Classes="tool" Content="⇩" ToolTip.Tip="Import from pgAdmin" Command="{Binding ImportPgAdminCommand}" />
+              <Button Classes="tool" Content="⟳" ToolTip.Tip="Refresh (F5)" Command="{Binding RefreshCommand}" />
+              <Button Classes="tool" Content="⌨" ToolTip.Tip="Query Tool" Command="{Binding QueryToolCommand}" />
+            </StackPanel>
+            <TextBlock Text="Object Explorer" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </DockPanel>
+        </Border>
+
+        <Panel>
+          <TreeView x:Name="Tree"
+                    ItemsSource="{Binding Roots}"
+                    SelectedItem="{Binding SelectedItem}"
+                    Background="Transparent"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                    Padding="0,4">
+            <TreeView.ItemTemplate>
+              <TreeDataTemplate DataType="vm:TreeItemViewModel" ItemsSource="{Binding Children}">
+                <StackPanel Orientation="Horizontal" Spacing="6" Height="22" Background="Transparent">
+                  <ContentControl Content="{Binding Icon}" Width="16" Height="16" VerticalAlignment="Center" IsVisible="{Binding !IsPlaceholder}" />
+                  <TextBlock Text="{Binding Label}" VerticalAlignment="Center"
+                             Classes.dim="{Binding IsPlaceholder}"
+                             FontStyle="{Binding IsPlaceholder, Converter={x:Static c:Converters.ItalicIfTrue}}"
+                             Foreground="{Binding IsError, Converter={x:Static c:Converters.ErrorBrush}}" />
+                  <TextBlock Text="{Binding CountText}" Classes="dim" VerticalAlignment="Center" IsVisible="{Binding CountText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  <TextBlock Text="{Binding Detail}" Classes="faint" FontSize="12" VerticalAlignment="Center" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  <ProgressBar IsIndeterminate="True" Width="40" Height="3" MinWidth="0" VerticalAlignment="Center" IsVisible="{Binding IsLoading}" />
+                </StackPanel>
+              </TreeDataTemplate>
+            </TreeView.ItemTemplate>
+          </TreeView>
+
+          <StackPanel Spacing="10" Margin="18" IsVisible="{Binding !HasServers}">
+            <TextBlock Classes="dim" TextWrapping="Wrap" Text="No servers registered yet." />
+            <Button Classes="primary" Content="Register Server" Command="{Binding RegisterServerCommand}" />
+            <Button Classes="ghost" Content="Import from pgAdmin" Command="{Binding ImportPgAdminCommand}" />
+          </StackPanel>
+        </Panel>
+      </DockPanel>
+
+      <GridSplitter Grid.Column="1" Background="{StaticResource LineSoft}" ResizeDirection="Columns" />
+
+      <!-- Workspace -->
+      <TabControl Grid.Column="2" Classes="workspace" ItemsSource="{Binding Tabs}" SelectedItem="{Binding ActiveTab}" Padding="0" Background="{StaticResource Bg}">
+        <TabControl.ItemTemplate>
+          <DataTemplate DataType="vm:DocumentViewModel">
+            <StackPanel Orientation="Horizontal" Spacing="7" ToolTip.Tip="{Binding ToolTip}">
+              <c:IconView Kind="{Binding IconKind}" IsVisible="{Binding IconKind, Converter={x:Static ObjectConverters.IsNotNull}}" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding Title}" MaxWidth="240" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              <Button Classes="tool" Content="✕" FontSize="10" Padding="4,1" MinWidth="0" VerticalAlignment="Center"
+                      IsVisible="{Binding CanClose}" Click="OnCloseTab" />
+            </StackPanel>
+          </DataTemplate>
+        </TabControl.ItemTemplate>
+      </TabControl>
+    </Grid>
+  </DockPanel>
+</Window>

@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Bengine\Bengine.csproj" />
+    <ProjectReference Include="..\Bengine.Introspection\Bengine.Introspection.csproj" />
   </ItemGroup>
 
 </Project>

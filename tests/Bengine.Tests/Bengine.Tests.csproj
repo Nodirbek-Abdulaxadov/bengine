@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Bengine\Bengine.csproj" />
+    <ProjectReference Include="..\..\src\Bengine.Introspection\Bengine.Introspection.csproj" />
   </ItemGroup>
 
 </Project>

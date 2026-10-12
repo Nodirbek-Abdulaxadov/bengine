@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Bengine.Studio.ViewModels"
+             xmlns:c="clr-namespace:Bengine.Studio.Controls"
+             x:Class="Bengine.Studio.Views.DataView"
+             x:DataType="vm:DataDocumentViewModel">
+  <DockPanel>
+    <!-- Toolbar -->
+    <Border DockPanel.Dock="Top" Classes="toolbar">
+      <WrapPanel>
+        <Button Classes="ghost" Content="⟳" ToolTip.Tip="Refresh" Command="{Binding RefreshCommand}" Margin="0,0,6,0" />
+        <Button Classes="ghost" Content="＋ Row" Command="{Binding AddRowCommand}" Margin="0,0,6,0" />
+        <Button Classes="ghost" Content="Save new" Command="{Binding SaveNewRowsCommand}" Margin="0,0,6,0" />
+        <Button Classes="ghost" Content="✕ Delete" Foreground="{StaticResource Danger}" Command="{Binding DeleteRowCommand}" Margin="0,0,14,0" />
+        <TextBlock Classes="dim" Text="Filter" VerticalAlignment="Center" Margin="0,0,6,0" />
+        <ComboBox Width="150" ItemsSource="{Binding Columns}" SelectedItem="{Binding SelectedFilterColumn}" PlaceholderText="column" Margin="0,0,6,0" />
+        <ComboBox Width="140" ItemsSource="{Binding Operators}" SelectedItem="{Binding SelectedOperator}" Margin="0,0,6,0" />
+        <TextBox Width="160" Text="{Binding FilterValue}" Watermark="value" Margin="0,0,6,0">
+          <TextBox.KeyBindings>
+            <KeyBinding Gesture="Enter" Command="{Binding ApplyFilterCommand}" />
+          </TextBox.KeyBindings>
+        </TextBox>
+        <Button Classes="primary" Content="Apply" Command="{Binding ApplyFilterCommand}" Margin="0,0,6,0" />
+        <Button Classes="ghost" Content="Clear" Command="{Binding ClearFilterCommand}" Margin="0,0,14,0" />
+        <Button Classes="ghost" Content="Export ▾">
+          <Button.Flyout>
+            <MenuFlyout Placement="BottomEdgeAlignedLeft">
+              <MenuItem Header="CSV…" Command="{Binding ExportCsvCommand}" />
+              <MenuItem Header="JSON…" Command="{Binding ExportJsonCommand}" />
+              <MenuItem Header="SQL INSERTs…" Command="{Binding ExportSqlCommand}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+      </WrapPanel>
+    </Border>
+
+    <!-- Pager -->
+    <Border DockPanel.Dock="Bottom" Background="{StaticResource Panel}" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,1,0,0" Padding="10,5">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+          <TextBlock Classes="dim" Text="Rows/page" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding PageSizes}" SelectedItem="{Binding PageSize}" />
+          <Button Classes="ghost" Content="«" Command="{Binding FirstPageCommand}" />
+          <Button Classes="ghost" Content="‹ Prev" Command="{Binding PreviousPageCommand}" />
+          <Button Classes="ghost" Content="Next ›" Command="{Binding NextPageCommand}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="14">
+          <TextBlock Classes="dim" Text="{Binding PageInfo}" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="700"
+                     Foreground="{Binding IsError, Converter={x:Static c:Converters.StatusBrush}}" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <Panel>
+      <DataGrid x:Name="Grid" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}"
+                AutoGenerateColumns="False" IsReadOnly="False" CanUserSortColumns="True" CanUserResizeColumns="True"
+                CanUserReorderColumns="True" HeadersVisibility="All" FrozenColumnCount="0" />
+      <ProgressBar IsIndeterminate="True" VerticalAlignment="Top" Height="2" MinHeight="2" IsVisible="{Binding IsBusy}" />
+    </Panel>
+  </DockPanel>
+</UserControl>

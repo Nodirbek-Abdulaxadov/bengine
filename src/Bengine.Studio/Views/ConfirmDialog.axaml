@@ -1,0 +1,15 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Bengine.Studio.Views.ConfirmDialog"
+        Width="440" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource Panel}" FontSize="13">
+  <StackPanel>
+    <TextBlock x:Name="Message" Margin="18,18" TextWrapping="Wrap" />
+    <Border BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="16,12">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Classes="ghost" Content="Cancel" Click="OnNo" IsCancel="True" />
+        <Button Classes="primary" Content="OK" Click="OnYes" IsDefault="True" />
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</Window>

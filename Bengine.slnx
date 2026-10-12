@@ -2,9 +2,12 @@
   <Folder Name="/src/">
     <Project Path="src/Bengine.Api/Bengine.Api.csproj" />
     <Project Path="src/Bengine.Cli/Bengine.Cli.csproj" />
+    <Project Path="src/Bengine.Introspection/Bengine.Introspection.csproj" />
+    <Project Path="src/Bengine.Studio/Bengine.Studio.csproj" />
     <Project Path="src/Bengine/Bengine.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Bengine.Studio.Tests/Bengine.Studio.Tests.csproj" />
     <Project Path="tests/Bengine.Tests/Bengine.Tests.csproj" />
   </Folder>
 </Solution>

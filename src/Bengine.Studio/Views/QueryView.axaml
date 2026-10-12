@@ -1,0 +1,48 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Bengine.Studio.ViewModels"
+             xmlns:c="clr-namespace:Bengine.Studio.Controls"
+             x:Class="Bengine.Studio.Views.QueryView"
+             x:DataType="vm:QueryDocumentViewModel">
+  <Grid RowDefinitions="Auto,2*,4,3*">
+    <Border Grid.Row="0" Classes="toolbar">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Right" Classes="dim" Text="{Binding Location}" VerticalAlignment="Center" />
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <Button Classes="primary" Content="▶ Execute" ToolTip.Tip="Execute (F5 / Ctrl+Enter)" Click="OnExecute" />
+          <Button Classes="ghost" Content="Explain" Click="OnExplain" />
+          <TextBlock Classes="dim" Text="Limit" VerticalAlignment="Center" Margin="8,0,0,0" />
+          <ComboBox ItemsSource="{Binding Limits}" SelectedItem="{Binding MaxRows}" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <TextBox Grid.Row="1" x:Name="Editor" Text="{Binding QueryText}" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+             FontFamily="{StaticResource Mono}" FontSize="13" Background="#0b1015" BorderThickness="0" CornerRadius="0" Padding="14,10"
+             Watermark="-- Write SQL here. F5 or Ctrl+Enter runs the selection, or everything when nothing is selected."
+             ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+
+    <GridSplitter Grid.Row="2" Background="{StaticResource Line}" ResizeDirection="Rows" />
+
+    <DockPanel Grid.Row="3">
+      <Border DockPanel.Dock="Top" Background="{StaticResource Panel}" Padding="10,2">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="760"
+                     Foreground="{Binding IsError, Converter={x:Static c:Converters.StatusBrush}}" />
+          <TabStrip SelectedIndex="{Binding ResultTabIndex}">
+            <TabStripItem Content="Data Output" />
+            <TabStripItem Content="Messages" />
+          </TabStrip>
+        </DockPanel>
+      </Border>
+      <Panel>
+        <DataGrid x:Name="Grid" ItemsSource="{Binding Rows}" AutoGenerateColumns="False" IsReadOnly="True"
+                  HeadersVisibility="All" CanUserResizeColumns="True"
+                  IsVisible="{Binding ResultTabIndex, Converter={x:Static c:Converters.IsZero}}" />
+        <ListBox ItemsSource="{Binding Messages}" FontFamily="{StaticResource Mono}" FontSize="12.5" Background="{StaticResource Bg}"
+                 IsVisible="{Binding ResultTabIndex, Converter={x:Static c:Converters.IsNonZero}}" />
+        <ProgressBar IsIndeterminate="True" VerticalAlignment="Top" Height="2" MinHeight="2" IsVisible="{Binding IsBusy}" />
+      </Panel>
+    </DockPanel>
+  </Grid>
+</UserControl>

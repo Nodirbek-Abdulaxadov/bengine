@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Bengine.Api;
 using Bengine.Enums;
 using Bengine.Generators;
 using Bengine.Generators.Languages;
@@ -18,6 +19,10 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(
         new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
+// Registered servers live in the user's config directory, shared with the
+// desktop Studio; session passwords for unsaved credentials live in memory.
+builder.Services.AddSingleton(new ServerRegistry(new Bengine.Introspection.Servers.ServerStore()));
+
 const string DevCors = "designer";
 builder.Services.AddCors(options =>
     options.AddPolicy(DevCors, policy =>
@@ -27,6 +32,9 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 app.UseCors(DevCors);
+
+// --- Live-database explorer endpoints (connect, discover, introspect, browse). ---
+app.MapDatabaseEndpoints();
 
 // --- Metadata endpoints ---
 app.MapGet("/api/providers", () => Enum.GetNames<DatabaseProvider>());

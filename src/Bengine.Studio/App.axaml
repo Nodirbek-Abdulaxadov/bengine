@@ -1,0 +1,77 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Bengine.Studio.App"
+             RequestedThemeVariant="Dark">
+
+  <Application.Resources>
+    <SolidColorBrush x:Key="Bg">#0f1419</SolidColorBrush>
+    <SolidColorBrush x:Key="Panel">#161c25</SolidColorBrush>
+    <SolidColorBrush x:Key="Panel2">#1c2430</SolidColorBrush>
+    <SolidColorBrush x:Key="Line">#273141</SolidColorBrush>
+    <SolidColorBrush x:Key="LineSoft">#1f2835</SolidColorBrush>
+    <SolidColorBrush x:Key="Dim">#8b98ab</SolidColorBrush>
+    <SolidColorBrush x:Key="Faint">#5d6a7d</SolidColorBrush>
+    <SolidColorBrush x:Key="Accent">#e0862f</SolidColorBrush>
+    <SolidColorBrush x:Key="Danger">#ff8f8f</SolidColorBrush>
+    <SolidColorBrush x:Key="Ok">#3ccf7e</SolidColorBrush>
+    <FontFamily x:Key="Mono">Cascadia Code, JetBrains Mono, DejaVu Sans Mono, Consolas, Menlo, monospace</FontFamily>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Dark" Accent="#4f8cff" RegionColor="#0f1419" AltHigh="#0f1419" ChromeLow="#161c25" ChromeMediumLow="#1c2430" ChromeMedium="#222c3a" ListLow="#1c2430" ListMedium="#24324a" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+
+    <Style Selector="TextBlock.dim"><Setter Property="Foreground" Value="{StaticResource Dim}" /></Style>
+    <Style Selector="TextBlock.faint"><Setter Property="Foreground" Value="{StaticResource Faint}" /></Style>
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{StaticResource Accent}" />
+      <Setter Property="Foreground" Value="#1a1206" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#ec9644" />
+      <Setter Property="Foreground" Value="#1a1206" />
+    </Style>
+    <Style Selector="Button.tool">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="MinWidth" Value="28" />
+    </Style>
+    <Style Selector="Button.ghost">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="10,4" />
+    </Style>
+    <Style Selector="Border.toolbar">
+      <Setter Property="Background" Value="{StaticResource Panel}" />
+      <Setter Property="BorderBrush" Value="{StaticResource LineSoft}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Padding" Value="8,6" />
+    </Style>
+    <Style Selector="DataGrid">
+      <Setter Property="Background" Value="{StaticResource Bg}" />
+      <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource LineSoft}" />
+      <Setter Property="VerticalGridLinesBrush" Value="{StaticResource LineSoft}" />
+      <Setter Property="GridLinesVisibility" Value="All" />
+      <Setter Property="RowHeight" Value="26" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="RowHeaderWidth" Value="46" />
+    </Style>
+    <Style Selector="TabStripItem">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="10,4" />
+    </Style>
+    <Style Selector="DataGridColumnHeader">
+      <Setter Property="Background" Value="{StaticResource Panel2}" />
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </Application.Styles>
+
+</Application>
