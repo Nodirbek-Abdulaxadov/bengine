@@ -1,0 +1,133 @@
+# A `studio-vX.Y.Z` tag → self-contained Bengine Studio builds for Linux, Windows, and macOS → GitHub Release.
+# workflow_dispatch builds the packages as artifacts only (version 0.0.<run number>) without releasing.
+# Every package runs without an installed .NET runtime:
+#   Linux   — bengine-studio_X_amd64.deb (apt installs the dependencies) and BengineStudio-X-x86_64.AppImage (any distro);
+#   Windows — BengineStudio-Setup-X-x64.exe (Inno Setup, per-user, no admin prompt);
+#   macOS   — BengineStudio-X-<arch>.dmg.
+# Icons come from deploy/studio (make-icons.py); Linux packaging is deploy/studio/package-linux.sh (also runs locally).
+# The builds are unsigned: Windows SmartScreen reports an unknown publisher and macOS Gatekeeper blocks the first
+# launch — right-click → Open (or: xattr -dr com.apple.quarantine "Bengine Studio.app").
+name: release-studio
+
+on:
+  push:
+    tags: ['studio-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Includes the headless Avalonia UI tests of the Studio window.
+      - name: Test
+        run: dotnet test Bengine.slnx -c Release
+
+  build:
+    name: Studio — ${{ matrix.rid }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, rid: linux-x64 }
+          - { os: windows-latest, rid: win-x64 }
+          - { os: macos-latest, rid: osx-arm64 }
+          - { os: macos-latest, rid: osx-x64 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/studio-v* ]]; then VERSION="${GITHUB_REF_NAME#studio-v}"; else VERSION="0.0.${GITHUB_RUN_NUMBER}"; fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Publish
+        run: >
+          dotnet publish src/Bengine.Studio -c Release -r ${{ matrix.rid }} --self-contained -o out
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=$VERSION
+
+      - name: Package (Linux — .deb, .AppImage)
+        if: startsWith(matrix.rid, 'linux')
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q desktop-file-utils   # desktop-file-validate — required by appimagetool
+          curl -sSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          APPIMAGETOOL=$PWD/appimagetool deploy/studio/package-linux.sh out "$VERSION" packages
+
+      - name: Package (Windows — installer)
+        if: startsWith(matrix.rid, 'win')
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y | Out-Null }
+          & $iscc /Q "/DVersion=$env:VERSION" "/DSource=$PWD\out" "/DOutputDir=$PWD\packages" deploy\studio\bengine-studio.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package (macOS — .dmg)
+        if: startsWith(matrix.rid, 'osx')
+        run: |
+          APP="dist/Bengine Studio.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" packages
+          cp out/bengine-studio "$APP/Contents/MacOS/"
+          cp deploy/studio/bengine-studio.icns "$APP/Contents/Resources/"
+          SHORT_VERSION="${VERSION%%-*}"   # CFBundleShortVersionString must be numeric
+          cat > "$APP/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>Bengine Studio</string>
+            <key>CFBundleDisplayName</key><string>Bengine Studio</string>
+            <key>CFBundleIdentifier</key><string>io.github.nodirbek-abdulaxadov.bengine-studio</string>
+            <key>CFBundleExecutable</key><string>bengine-studio</string>
+            <key>CFBundleIconFile</key><string>bengine-studio</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${SHORT_VERSION}</string>
+            <key>CFBundleVersion</key><string>${SHORT_VERSION}</string>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          PLIST
+          chmod +x "$APP/Contents/MacOS/bengine-studio"
+          ln -s /Applications dist/Applications
+          ARCH_NAME=$([[ "${{ matrix.rid }}" == osx-arm64 ]] && echo arm64 || echo x64)
+          hdiutil create -volname "Bengine Studio" -srcfolder dist -ov -format UDZO "packages/BengineStudio-${VERSION}-${ARCH_NAME}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bengine-studio-${{ matrix.rid }}
+          path: packages/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/studio-v')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Bengine Studio ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist/*

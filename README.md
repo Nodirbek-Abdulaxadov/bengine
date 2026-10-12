@@ -172,6 +172,27 @@ Run the desktop Database Explorer (Avalonia):
 dotnet run --project src/Bengine.Studio
 ```
 
+### Releasing Bengine Studio
+
+Pushing a `studio-vX.Y.Z` tag runs `.github/workflows/release-studio.yml`: it runs
+the tests, publishes Studio self-contained (no .NET runtime needed) for Linux,
+Windows, and macOS, and attaches the packages to a GitHub Release:
+
+| Platform | Package |
+| --- | --- |
+| Linux | `bengine-studio_X_amd64.deb`, `BengineStudio-X-x86_64.AppImage` |
+| Windows | `BengineStudio-Setup-X-x64.exe` (per-user, no admin prompt) |
+| macOS | `BengineStudio-X-arm64.dmg`, `BengineStudio-X-x64.dmg` |
+
+```bash
+git tag studio-v1.0.0 && git push origin studio-v1.0.0
+```
+
+Running the workflow manually builds the packages as artifacts without
+releasing. The packages are unsigned, so Windows SmartScreen and macOS Gatekeeper
+warn on first launch. Icons and packaging scripts live in `deploy/studio`
+(`make-icons.py` regenerates the icons; `package-linux.sh` also runs locally).
+
 Live-database tests run against PostgreSQL when `BENGINE_TEST_PG` is set to
 `host;port;database;user;password`; the desktop UI tests render screenshots to
 the directory named by `BENGINE_SHOTS`.

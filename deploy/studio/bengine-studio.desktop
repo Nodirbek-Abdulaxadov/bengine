@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Bengine Studio
+GenericName=Database Explorer
+Comment=Browse and edit PostgreSQL, MySQL, SQL Server, and SQLite databases
+Exec=bengine-studio %U
+Icon=bengine-studio
+Terminal=false
+Categories=Development;Database;
+Keywords=database;sql;postgresql;mysql;sqlite;sqlserver;pgadmin;
+StartupWMClass=bengine-studio

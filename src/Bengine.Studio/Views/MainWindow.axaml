@@ -8,6 +8,7 @@
         Width="1440" Height="900" MinWidth="900" MinHeight="560"
         FontSize="13"
         Background="{StaticResource Bg}"
+        Icon="/Assets/bengine-studio.png"
         Title="Bengine Studio">
 
   <Window.DataTemplates>
