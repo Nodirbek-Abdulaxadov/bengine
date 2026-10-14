@@ -24,6 +24,9 @@ public abstract partial class DocumentViewModel : ObservableObject
     /// <summary>Gets a tooltip describing the tab.</summary>
     public virtual string? ToolTip => Title;
 
+    /// <summary>Gets the color of the tab's server (<c>#rrggbb</c>), or <c>null</c>.</summary>
+    public virtual string? AccentColor => null;
+
     /// <summary>Gets or sets the action that closes the tab (set by the explorer).</summary>
     public Action? Close { get; set; }
 }
@@ -69,6 +72,9 @@ public sealed partial class SqlDocumentViewModel : DocumentViewModel
 
     /// <summary>Gets or sets the action that opens the SQL in a Query Tool (set by the explorer).</summary>
     public Action<string>? OpenInQueryTool { get; set; }
+
+    /// <summary>Gets or sets the dialect of the shown SQL.</summary>
+    public Bengine.Enums.DatabaseProvider Provider { get; set; } = Bengine.Enums.DatabaseProvider.PostgreSql;
 
     /// <inheritdoc />
     public override string Title => "SQL";

@@ -1,0 +1,75 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Bengine.Studio.ViewModels"
+             xmlns:s="clr-namespace:Bengine.Introspection.Servers;assembly=Bengine.Introspection"
+             xmlns:cat="clr-namespace:Bengine.Introspection.Catalog;assembly=Bengine.Introspection"
+             xmlns:c="clr-namespace:Bengine.Studio.Controls"
+             x:Class="Bengine.Studio.Views.DataCompareView"
+             x:DataType="vm:DataCompareViewModel">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.side">
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Width" Value="64" />
+    </Style>
+  </UserControl.Styles>
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="s:ServerProfile">
+      <TextBlock Text="{Binding Name}" />
+    </DataTemplate>
+    <DataTemplate DataType="cat:CatalogRelation">
+      <TextBlock Text="{Binding Name}" />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Classes="toolbar" Padding="12,8">
+      <StackPanel Spacing="6">
+        <StackPanel Orientation="Horizontal" Spacing="6" DataContext="{Binding Source}" x:DataType="vm:TableEndpoint">
+          <TextBlock Classes="side" Text="Source" Foreground="#3ccf7e" ToolTip.Tip="The rows wanted" />
+          <ComboBox ItemsSource="{Binding Servers}" SelectedItem="{Binding Server}" MinWidth="170" PlaceholderText="server" />
+          <ComboBox ItemsSource="{Binding Databases}" SelectedItem="{Binding Database}" MinWidth="170" PlaceholderText="database" />
+          <ComboBox ItemsSource="{Binding Tables}" SelectedItem="{Binding Table}" MinWidth="200" PlaceholderText="table" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="6" DataContext="{Binding Target}" x:DataType="vm:TableEndpoint">
+          <TextBlock Classes="side" Text="Target" Foreground="#e0862f" ToolTip.Tip="The rows to change" />
+          <ComboBox ItemsSource="{Binding Servers}" SelectedItem="{Binding Server}" MinWidth="170" PlaceholderText="server" />
+          <ComboBox ItemsSource="{Binding Databases}" SelectedItem="{Binding Database}" MinWidth="170" PlaceholderText="database" />
+          <ComboBox ItemsSource="{Binding Tables}" SelectedItem="{Binding Table}" MinWidth="200" PlaceholderText="table" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="primary" Content="Compare" Command="{Binding CompareCommand}" IsEnabled="{Binding !IsBusy}" />
+          <Button Classes="ghost danger" Content="■ Stop" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" />
+          <Button Classes="ghost" Content="⇅ Swap" Command="{Binding SwapCommand}" />
+          <TextBlock Classes="dim" Text="Key" VerticalAlignment="Center" Margin="8,0,0,0" />
+          <TextBox Text="{Binding KeyColumns}" Width="160" Watermark="primary key" FontFamily="{StaticResource Mono}"
+                   ToolTip.Tip="Columns that identify a row (comma-separated); empty uses the primary key" />
+          <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Margin="10,0,0,0" TextTrimming="CharacterEllipsis" MaxWidth="640"
+                     Foreground="{Binding IsError, Converter={x:Static c:Converters.StatusBrush}}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+    <ProgressBar DockPanel.Dock="Top" IsIndeterminate="True" Height="2" MinHeight="2" IsVisible="{Binding IsBusy}" />
+
+    <Grid RowDefinitions="3*,4,2*">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Summary}" Classes="dim" Margin="10,6" TextWrapping="Wrap" />
+        <DataGrid x:Name="Diffs" ItemsSource="{Binding Rows}" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
+                  CanUserSortColumns="False" RowHeight="26" GridLinesVisibility="All" Background="{StaticResource Bg}" />
+      </DockPanel>
+      <GridSplitter Grid.Row="1" Background="{StaticResource LineSoft}" ResizeDirection="Rows" />
+      <DockPanel Grid.Row="2">
+        <Border DockPanel.Dock="Top" Background="{StaticResource Panel}" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,0,0,1" Padding="10,4">
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <TextBlock Text="Sync script (target ← source)" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <CheckBox Content="Insert missing" IsChecked="{Binding SyncInserts}" />
+            <CheckBox Content="Update changed" IsChecked="{Binding SyncUpdates}" />
+            <CheckBox Content="Delete extra" IsChecked="{Binding SyncDeletes}" />
+            <Button Classes="ghost" Content="Copy" Command="{Binding CopyScriptCommand}" />
+            <Button Classes="primary" Content="Apply to Target…" Command="{Binding ApplyCommand}" IsEnabled="{Binding !IsBusy}" />
+          </StackPanel>
+        </Border>
+        <c:SqlEditor x:Name="ScriptEditor" IsReadOnly="True" HighlightStatement="False" />
+      </DockPanel>
+    </Grid>
+  </DockPanel>
+</UserControl>

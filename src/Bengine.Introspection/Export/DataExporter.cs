@@ -32,6 +32,44 @@ public static class DataExporter
         return builder.ToString();
     }
 
+    /// <summary>Renders rows as tab-separated text with a header row, as spreadsheets paste it.</summary>
+    /// <param name="columns">The column names.</param>
+    /// <param name="rows">The rows, aligned with <paramref name="columns"/>.</param>
+    /// <returns>The TSV text.</returns>
+    public static string ToTsv(IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<object?>> rows)
+    {
+        static string Field(string value) =>
+            value.Contains('\t') || value.Contains('\n') || value.Contains('"') ? "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"" : value;
+
+        var builder = new StringBuilder();
+        builder.AppendLine(string.Join("\t", columns.Select(Field)));
+        foreach (var row in rows)
+        {
+            builder.AppendLine(string.Join("\t", row.Select(cell => cell is null ? string.Empty : Field(Scalar(cell)))));
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>Renders rows as a Markdown table.</summary>
+    /// <param name="columns">The column names.</param>
+    /// <param name="rows">The rows, aligned with <paramref name="columns"/>.</param>
+    /// <returns>The Markdown text.</returns>
+    public static string ToMarkdown(IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<object?>> rows)
+    {
+        static string Cell(string value) => value.Replace("|", "\\|", StringComparison.Ordinal).Replace("\n", "<br>", StringComparison.Ordinal);
+
+        var builder = new StringBuilder();
+        builder.Append("| ").AppendJoin(" | ", columns.Select(Cell)).AppendLine(" |");
+        builder.Append('|').AppendJoin("|", columns.Select(_ => " --- ")).AppendLine("|");
+        foreach (var row in rows)
+        {
+            builder.Append("| ").AppendJoin(" | ", row.Select(cell => cell is null ? "NULL" : Cell(Scalar(cell)))).AppendLine(" |");
+        }
+
+        return builder.ToString();
+    }
+
     /// <summary>Renders rows as a JSON array of objects keyed by column name.</summary>
     /// <param name="columns">The column names.</param>
     /// <param name="rows">The rows, aligned with <paramref name="columns"/>.</param>
@@ -81,7 +119,7 @@ public static class DataExporter
         var builder = new StringBuilder();
         foreach (var row in rows)
         {
-            var values = string.Join(", ", row.Select(cell => SqlLiteral(cell, dialect)));
+            var values = string.Join(", ", row.Select(cell => SqlLiterals.Format(cell, provider)));
             builder.Append("INSERT INTO ").Append(qualified)
                 .Append(" (").Append(columnList).Append(") VALUES (")
                 .Append(values).AppendLine(");");
@@ -102,7 +140,7 @@ public static class DataExporter
         return "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
     }
 
-    private static string Scalar(object? value) => value switch
+    internal static string Scalar(object? value) => value switch
     {
         null => string.Empty,
         byte[] bytes => "0x" + Convert.ToHexString(bytes),
@@ -135,13 +173,4 @@ public static class DataExporter
         }
     }
 
-    private static string SqlLiteral(object? value, SqlDialect dialect) => value switch
-    {
-        null => "NULL",
-        bool b => b ? "TRUE" : "FALSE",
-        byte or sbyte or short or ushort or int or uint or long or ulong => Scalar(value),
-        float or double or decimal => Scalar(value),
-        byte[] bytes => $"'\\x{Convert.ToHexString(bytes)}'",
-        _ => "'" + Scalar(value).Replace("'", "''", StringComparison.Ordinal) + "'",
-    };
 }

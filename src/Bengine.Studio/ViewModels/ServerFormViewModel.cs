@@ -16,6 +16,15 @@ public sealed record ProviderOption(DatabaseProvider Provider, string Label)
     public override string ToString() => Label;
 }
 
+/// <summary>A color choice that marks a server.</summary>
+/// <param name="Name">The display name.</param>
+/// <param name="Hex">The <c>#rrggbb</c> value, or <c>null</c> for none.</param>
+public sealed record ServerColorOption(string Name, string? Hex)
+{
+    /// <summary>Gets the swatch color (a neutral gray for "none").</summary>
+    public string Swatch => Hex ?? "#2a3442";
+}
+
 /// <summary>
 /// The Register/Edit Server form (General / Connection / Advanced), with
 /// connection testing. Saving writes the registration to the shared
@@ -42,6 +51,18 @@ public sealed partial class ServerFormViewModel : ObservableObject
     [ObservableProperty] private bool _isError;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private int _tabIndex;
+    [ObservableProperty] private ServerColorOption _selectedColor;
+    [ObservableProperty] private bool _readOnly;
+    [ObservableProperty] private bool _useSsh;
+    [ObservableProperty] private string _sshHost = string.Empty;
+    [ObservableProperty] private decimal? _sshPort = 22;
+    [ObservableProperty] private string _sshUser = string.Empty;
+    [ObservableProperty] private string _sshKeyFile = string.Empty;
+    [ObservableProperty] private string _sshPassword = string.Empty;
+    [ObservableProperty] private string _sslMode = "(driver default)";
+    [ObservableProperty] private string _sslRootCertificate = string.Empty;
+    [ObservableProperty] private string _sslClientCertificate = string.Empty;
+    [ObservableProperty] private string _sslClientKey = string.Empty;
 
     /// <summary>Creates the form, pre-filled from an existing registration when editing.</summary>
     /// <param name="store">The server store.</param>
@@ -51,11 +72,24 @@ public sealed partial class ServerFormViewModel : ObservableObject
         _store = store;
         _existing = existing;
         _selectedProvider = ProviderOptions[0];
+        _selectedColor = ColorOptions[0];
         if (existing is null)
         {
             return;
         }
 
+        _selectedColor = ColorOptions.FirstOrDefault(c => string.Equals(c.Hex, existing.Color, StringComparison.OrdinalIgnoreCase))
+            ?? (existing.Color is null ? ColorOptions[0] : new ServerColorOption("Custom", existing.Color));
+        _readOnly = existing.ReadOnly;
+        _useSsh = !string.IsNullOrWhiteSpace(existing.SshHost);
+        _sshHost = existing.SshHost ?? string.Empty;
+        _sshPort = existing.SshPort ?? 22;
+        _sshUser = existing.SshUser ?? string.Empty;
+        _sshKeyFile = existing.SshKeyFile ?? string.Empty;
+        _sslMode = existing.SslMode ?? "(driver default)";
+        _sslRootCertificate = existing.SslRootCertificate ?? string.Empty;
+        _sslClientCertificate = existing.SslClientCertificate ?? string.Empty;
+        _sslClientKey = existing.SslClientKey ?? string.Empty;
         _name = existing.Name;
         _group = existing.Group;
         _comment = existing.Comment ?? string.Empty;
@@ -78,6 +112,27 @@ public sealed partial class ServerFormViewModel : ObservableObject
         new(DatabaseProvider.SqlServer, "Microsoft SQL Server"),
         new(DatabaseProvider.Sqlite, "SQLite"),
     ];
+
+    /// <summary>Gets the color choices (DataGrip-like: red for production, green for local…).</summary>
+    public IReadOnlyList<ServerColorOption> ColorOptions { get; } =
+    [
+        new("None", null),
+        new("Red", "#e05d5d"),
+        new("Orange", "#e0862f"),
+        new("Yellow", "#d9b23a"),
+        new("Green", "#3ccf7e"),
+        new("Blue", "#4f8cff"),
+        new("Purple", "#a779e9"),
+    ];
+
+    /// <summary>Gets the SSL mode choices.</summary>
+    public IReadOnlyList<string> SslModes { get; } = ["(driver default)", "disable", "prefer", "require", "verify-ca", "verify-full"];
+
+    /// <summary>Gets where saved passwords are kept.</summary>
+    public string PasswordStorage => _store.Credentials is { } keyring ? $"Saved passwords go to the {keyring.Name}." : "Saved passwords go to the server list file (owner-only).";
+
+    /// <summary>Gets the SSH password watermark.</summary>
+    public string SshPasswordHint => _existing?.SshPassword is { Length: > 0 } ? "(saved — leave blank to keep)" : "password, or the key's passphrase";
 
     /// <summary>Gets the dialog title.</summary>
     public string Title => _existing is null ? "Register — Server" : $"{_existing.Name} — Properties";
@@ -157,6 +212,7 @@ public sealed partial class ServerFormViewModel : ObservableObject
         }
 
         Saved = _store.Upsert(Build());
+        Bengine.Introspection.Connection.SshTunnels.Close(Saved.Id);
         Completed?.Invoke();
     }
 
@@ -175,6 +231,17 @@ public sealed partial class ServerFormViewModel : ObservableObject
         FilePath = Blank(FilePath),
         Options = Blank(Options),
         Comment = Blank(Comment),
+        Color = SelectedColor.Hex,
+        ReadOnly = ReadOnly,
+        SshHost = UseSsh ? Blank(SshHost) : null,
+        SshPort = UseSsh && SshPort is { } sshPort ? (int)sshPort : null,
+        SshUser = UseSsh ? Blank(SshUser) : null,
+        SshKeyFile = UseSsh ? Blank(SshKeyFile) : null,
+        SshPassword = !UseSsh ? null : string.IsNullOrEmpty(SshPassword) ? _existing?.SshPassword : SshPassword,
+        SslMode = SslMode.StartsWith('(') ? null : SslMode,
+        SslRootCertificate = Blank(SslRootCertificate),
+        SslClientCertificate = Blank(SslClientCertificate),
+        SslClientKey = Blank(SslClientKey),
     };
 
     private string? Validate() =>

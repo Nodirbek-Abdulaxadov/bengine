@@ -1,0 +1,94 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Bengine.Studio.ViewModels"
+             xmlns:s="clr-namespace:Bengine.Introspection.Servers;assembly=Bengine.Introspection"
+             xmlns:c="clr-namespace:Bengine.Studio.Controls"
+             x:Class="Bengine.Studio.Views.SchemaCompareView"
+             x:DataType="vm:SchemaCompareViewModel">
+  <UserControl.Styles>
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <Style Selector="ListBoxItem CheckBox">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="TextBlock.side">
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Width" Value="64" />
+    </Style>
+  </UserControl.Styles>
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="s:ServerProfile">
+      <TextBlock Text="{Binding Name}" />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+  <DockPanel>
+    <!-- Endpoints -->
+    <Border DockPanel.Dock="Top" Classes="toolbar" Padding="12,8">
+      <StackPanel Spacing="6">
+        <StackPanel Orientation="Horizontal" Spacing="6" DataContext="{Binding Source}" x:DataType="vm:CompareEndpoint">
+          <TextBlock Classes="side" Text="Source" Foreground="#3ccf7e" ToolTip.Tip="The desired structure" />
+          <CheckBox Content="File" IsChecked="{Binding UseFile}" />
+          <ComboBox ItemsSource="{Binding Servers}" SelectedItem="{Binding Server}" MinWidth="170" IsVisible="{Binding !UseFile}" PlaceholderText="server" />
+          <ComboBox ItemsSource="{Binding Databases}" SelectedItem="{Binding Database}" MinWidth="170" IsVisible="{Binding !UseFile}" PlaceholderText="database" />
+          <ComboBox ItemsSource="{Binding Schemas}" SelectedItem="{Binding Schema}" MinWidth="150" IsVisible="{Binding !UseFile}" PlaceholderText="schema" />
+          <TextBox Text="{Binding FilePath}" Width="420" Watermark="schema.json or DDL .sql" IsVisible="{Binding UseFile}" />
+          <Button Classes="ghost" Content="Browse…" IsVisible="{Binding UseFile}" Command="{Binding $parent[UserControl].((vm:SchemaCompareViewModel)DataContext).BrowseSourceCommand}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="6" DataContext="{Binding Target}" x:DataType="vm:CompareEndpoint">
+          <TextBlock Classes="side" Text="Target" Foreground="#e0862f" ToolTip.Tip="The database to migrate" />
+          <CheckBox Content="File" IsChecked="{Binding UseFile}" />
+          <ComboBox ItemsSource="{Binding Servers}" SelectedItem="{Binding Server}" MinWidth="170" IsVisible="{Binding !UseFile}" PlaceholderText="server" />
+          <ComboBox ItemsSource="{Binding Databases}" SelectedItem="{Binding Database}" MinWidth="170" IsVisible="{Binding !UseFile}" PlaceholderText="database" />
+          <ComboBox ItemsSource="{Binding Schemas}" SelectedItem="{Binding Schema}" MinWidth="150" IsVisible="{Binding !UseFile}" PlaceholderText="schema" />
+          <TextBox Text="{Binding FilePath}" Width="420" Watermark="schema.json or DDL .sql" IsVisible="{Binding UseFile}" />
+          <Button Classes="ghost" Content="Browse…" IsVisible="{Binding UseFile}" Command="{Binding $parent[UserControl].((vm:SchemaCompareViewModel)DataContext).BrowseTargetCommand}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="primary" Content="Compare" Command="{Binding CompareCommand}" />
+          <Button Classes="ghost" Content="⇅ Swap" Command="{Binding SwapCommand}" />
+          <CheckBox Content="Ignore comments" IsChecked="{Binding IgnoreComments}" />
+          <CheckBox Content="Match constraints by definition" IsChecked="{Binding IgnoreConstraintNames}" />
+          <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Margin="10,0,0,0" TextTrimming="CharacterEllipsis" MaxWidth="600"
+                     Foreground="{Binding IsError, Converter={x:Static c:Converters.StatusBrush}}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+    <ProgressBar DockPanel.Dock="Top" IsIndeterminate="True" Height="2" MinHeight="2" IsVisible="{Binding IsBusy}" />
+
+    <Grid ColumnDefinitions="2*,4,3*">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Summary}" Classes="dim" Margin="10,6" TextWrapping="Wrap" />
+        <ListBox ItemsSource="{Binding Changes}" SelectedItem="{Binding SelectedChange}" Background="{StaticResource Bg}">
+          <ListBox.ItemTemplate>
+            <DataTemplate DataType="vm:ChangeItem">
+              <DockPanel>
+                <CheckBox DockPanel.Dock="Left" IsChecked="{Binding Include}" Margin="0,0,6,0" MinHeight="0" />
+                <TextBlock DockPanel.Dock="Left" Text="{Binding Marker}" Width="16" FontWeight="Bold" VerticalAlignment="Center"
+                           Foreground="{Binding Marker, Converter={x:Static c:Converters.MarkerBrush}}" />
+                <TextBlock DockPanel.Dock="Right" Text="data loss" FontSize="11" Foreground="{StaticResource Danger}" VerticalAlignment="Center" IsVisible="{Binding IsDestructive}" Margin="8,0,0,0" />
+                <TextBlock Text="{Binding Description}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+      <GridSplitter Grid.Column="1" Background="{StaticResource LineSoft}" ResizeDirection="Columns" />
+      <DockPanel Grid.Column="2">
+        <Border DockPanel.Dock="Top" Background="{StaticResource Panel}" Padding="8,4">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock Text="Migration script (target dialect)" Classes="dim" VerticalAlignment="Center" Margin="0,0,10,0" />
+            <Button Classes="ghost" Content="Copy" Command="{Binding CopyCommand}" />
+            <Button Classes="ghost" Content="Save…" Command="{Binding SaveCommand}" />
+            <Button Classes="ghost" Content="Open in Query Tool" Command="{Binding OpenInConsoleCommand}" />
+            <Button Classes="primary" Content="Apply to Target…" Command="{Binding ApplyCommand}" />
+          </StackPanel>
+        </Border>
+        <c:SqlEditor x:Name="ScriptEditor" IsReadOnly="True" HighlightStatement="False" />
+      </DockPanel>
+    </Grid>
+  </DockPanel>
+</UserControl>

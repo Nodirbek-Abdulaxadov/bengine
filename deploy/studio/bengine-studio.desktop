@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Bengine Studio
+Name=Bengine Data Studio
 GenericName=Database Explorer
 Comment=Browse and edit PostgreSQL, MySQL, SQL Server, and SQLite databases
 Exec=bengine-studio %U

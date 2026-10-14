@@ -28,6 +28,9 @@ public sealed partial class TreeItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoading;
 
+    [ObservableProperty]
+    private bool _isVisible = true;
+
     private TreeItemViewModel(ExplorerViewModel owner, TreeItemViewModel? parent, string label)
     {
         _owner = owner;
@@ -67,6 +70,12 @@ public sealed partial class TreeItemViewModel : ObservableObject
 
     /// <summary>Gets the child rows.</summary>
     public ObservableCollection<TreeItemViewModel> Children { get; } = [];
+
+    /// <summary>Gets the server's marking color (<c>#rrggbb</c>), shown as a tint on the server row.</summary>
+    public string? AccentColor => Kind == "Server" ? Server?.Color : null;
+
+    /// <summary>Gets a value indicating whether the row belongs to a read-only server.</summary>
+    public bool IsReadOnlyServer => Kind == "Server" && Server?.ReadOnly == true;
 
     /// <summary>Gets the row's icon (rebuilt when the connection state changes).</summary>
     public Control? Icon => IsPlaceholder
@@ -185,6 +194,65 @@ public sealed partial class TreeItemViewModel : ObservableObject
         {
             IsLoading = false;
         }
+    }
+
+    /// <summary>Loads the children if needed and expands the row.</summary>
+    /// <returns><c>false</c> if loading failed or the sign-in was cancelled.</returns>
+    public async Task<bool> EnsureLoadedAsync()
+    {
+        if (!_loaded)
+        {
+            await LoadAsync();
+        }
+
+        if (_loaded)
+        {
+            IsExpanded = true;
+        }
+
+        return _loaded;
+    }
+
+    /// <summary>
+    /// Shows only rows whose label contains the text (case-insensitive), with
+    /// their ancestors; matching rows' loaded subtrees stay visible. An empty
+    /// text shows everything. Only loaded rows are searched.
+    /// </summary>
+    /// <param name="text">The filter text.</param>
+    /// <returns>Whether this row stays visible.</returns>
+    public bool ApplyFilter(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            foreach (var child in Children)
+            {
+                child.ApplyFilter(text);
+            }
+
+            IsVisible = true;
+            return true;
+        }
+
+        // An unloaded subtree ("Loading…") cannot match.
+        if (IsPlaceholder)
+        {
+            return false;
+        }
+
+        var self = Label.Contains(text, StringComparison.OrdinalIgnoreCase);
+        var anyChild = false;
+        foreach (var child in Children)
+        {
+            anyChild |= self ? child.ApplyFilter(string.Empty) : child.ApplyFilter(text);
+        }
+
+        IsVisible = self || anyChild;
+        if (anyChild && !self && _loaded)
+        {
+            IsExpanded = true;
+        }
+
+        return IsVisible;
     }
 
     /// <summary>Drops the loaded children and reloads them if the row is expanded.</summary>

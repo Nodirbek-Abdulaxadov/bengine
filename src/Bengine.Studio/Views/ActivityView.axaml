@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Bengine.Studio.ViewModels"
+             xmlns:a="clr-namespace:Bengine.Introspection.Activity;assembly=Bengine.Introspection"
+             xmlns:c="clr-namespace:Bengine.Studio.Controls"
+             x:Class="Bengine.Studio.Views.ActivityView"
+             x:DataType="vm:ActivityDocumentViewModel">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Classes="toolbar" BorderThickness="0,0,0,1" BorderBrush="{Binding AccentColor, Converter={x:Static c:Converters.AccentBrush}}">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Right" Classes="dim" Text="{Binding Summary}" VerticalAlignment="Center" />
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <Button Classes="tool" Content="⟳" ToolTip.Tip="Refresh" Command="{Binding RefreshCommand}" />
+          <CheckBox Content="Auto-refresh (2 s)" IsChecked="{Binding AutoRefresh}" />
+          <CheckBox Content="Hide idle" IsChecked="{Binding HideIdle}" />
+          <Border Classes="sep" />
+          <Button Classes="ghost" Content="Cancel Query" Command="{Binding CancelQueryCommand}" ToolTip.Tip="Stop the selected session's running statement" />
+          <Button Classes="ghost danger" Content="End Session…" Command="{Binding TerminateCommand}" />
+          <Button Classes="ghost" Content="Open Statement" Command="{Binding OpenQueryCommand}" />
+          <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{Binding IsError, Converter={x:Static c:Converters.StatusBrush}}" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <Grid RowDefinitions="3*,4,2*">
+      <DataGrid ItemsSource="{Binding Sessions}" SelectedItem="{Binding Selected}" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Session" Binding="{Binding Id}" x:DataType="a:ActivitySession" Width="80" />
+          <DataGridTextColumn Header="User" Binding="{Binding User}" x:DataType="a:ActivitySession" Width="110" />
+          <DataGridTextColumn Header="Database" Binding="{Binding Database}" x:DataType="a:ActivitySession" Width="120" />
+          <DataGridTextColumn Header="Client" Binding="{Binding Client}" x:DataType="a:ActivitySession" Width="120" />
+          <DataGridTextColumn Header="State" Binding="{Binding State}" x:DataType="a:ActivitySession" Width="130" />
+          <DataGridTextColumn Header="Seconds" Binding="{Binding Seconds, StringFormat='{}{0:0.#}'}" x:DataType="a:ActivitySession" Width="80" />
+          <DataGridTextColumn Header="Waiting on" Binding="{Binding Wait}" x:DataType="a:ActivitySession" Width="150" />
+          <DataGridTextColumn Header="Blocked by" Binding="{Binding BlockedBy}" x:DataType="a:ActivitySession" Width="90" Foreground="#ff8f8f" />
+          <DataGridTextColumn Header="Statement" Binding="{Binding Query}" x:DataType="a:ActivitySession" Width="*" FontFamily="{StaticResource Mono}" />
+        </DataGrid.Columns>
+      </DataGrid>
+      <GridSplitter Grid.Row="1" Background="{StaticResource LineSoft}" ResizeDirection="Rows" />
+      <DockPanel Grid.Row="2">
+        <TextBlock DockPanel.Dock="Top" Text="Locks (awaited first)" Classes="dim" Margin="10,4" />
+        <DataGrid ItemsSource="{Binding Locks}" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Session" Binding="{Binding Session}" x:DataType="a:ActivityLock" Width="90" />
+            <DataGridTextColumn Header="Object" Binding="{Binding Object}" x:DataType="a:ActivityLock" Width="*" />
+            <DataGridTextColumn Header="Mode" Binding="{Binding Mode}" x:DataType="a:ActivityLock" Width="200" />
+            <DataGridCheckBoxColumn Header="Granted" Binding="{Binding Granted}" x:DataType="a:ActivityLock" Width="90" />
+          </DataGrid.Columns>
+        </DataGrid>
+      </DockPanel>
+    </Grid>
+  </DockPanel>
+</UserControl>

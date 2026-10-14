@@ -88,6 +88,8 @@ public abstract class InformationSchemaProvider : SchemaProviderBase
         var primaryKey = await ReadPrimaryKeyAsync(table, cancellationToken).ConfigureAwait(false);
         var foreignKeys = await ReadForeignKeysAsync(table, cancellationToken).ConfigureAwait(false);
         var indexes = await ReadIndexesAsync(table, cancellationToken).ConfigureAwait(false);
+        var checks = await ReadChecksAsync(table, cancellationToken).ConfigureAwait(false);
+        var comment = await ReadTableCommentAsync(table, cancellationToken).ConfigureAwait(false);
 
         return new Table
         {
@@ -97,7 +99,63 @@ public abstract class InformationSchemaProvider : SchemaProviderBase
             PrimaryKey = primaryKey,
             ForeignKeys = foreignKeys,
             Indexes = indexes,
+            CheckConstraints = checks,
+            Comment = string.IsNullOrEmpty(comment) ? null : comment,
         };
+    }
+
+    /// <summary>Reads the relation's check constraints.</summary>
+    /// <param name="table">The relation.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The constraints, with their expressions as the server prints them.</returns>
+    protected virtual Task<IReadOnlyList<CheckConstraint>> ReadChecksAsync(TableRef table, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<CheckConstraint>>([]);
+
+    /// <summary>Reads the relation's comment.</summary>
+    /// <param name="table">The relation.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The comment, or <c>null</c>.</returns>
+    protected virtual Task<string?> ReadTableCommentAsync(TableRef table, CancellationToken cancellationToken) =>
+        Task.FromResult<string?>(null);
+
+    /// <summary>Gets the SQL expression over <c>information_schema.columns</c> that yields the column default.</summary>
+    protected virtual string DefaultSql => "column_default";
+
+    /// <summary>Gets a SQL expression over <c>information_schema.columns</c> yielding the column comment, or <c>NULL</c>.</summary>
+    protected virtual string ColumnCommentSql => "NULL";
+
+    /// <summary>Removes the outer parentheses a server wraps a check expression in.</summary>
+    /// <param name="expression">The expression.</param>
+    /// <returns>The bare expression.</returns>
+    protected static string Unwrap(string expression)
+    {
+        var text = expression.Trim();
+        if (text.StartsWith("CHECK", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text[5..].Trim();
+        }
+
+        while (text.Length >= 2 && text[0] == '(' && text[^1] == ')' && Balanced(text[1..^1]))
+        {
+            text = text[1..^1].Trim();
+        }
+
+        return text;
+    }
+
+    private static bool Balanced(string text)
+    {
+        var depth = 0;
+        foreach (var c in text)
+        {
+            depth += c == '(' ? 1 : c == ')' ? -1 : 0;
+            if (depth < 0)
+            {
+                return false;
+            }
+        }
+
+        return depth == 0;
     }
 
     /// <summary>Reads the names of the relation's identity / auto-increment columns.</summary>
@@ -143,11 +201,32 @@ public abstract class InformationSchemaProvider : SchemaProviderBase
         return isLiteral ? DefaultValue.Literal(trimmed) : DefaultValue.Expression(trimmed);
     }
 
+    /// <summary>
+    /// Gets a SQL expression over <c>information_schema.columns</c> that yields the
+    /// column's exact native type (<c>character varying(320)</c>,
+    /// <c>int unsigned</c>, <c>text[]</c>), or <c>NULL</c> to compose it from the
+    /// standard columns. The native spelling round-trips into DDL for the same
+    /// provider and lets schema comparison see types the logical model maps
+    /// approximately.
+    /// </summary>
+    protected virtual string NativeTypeSql => "NULL";
+
+    // SQL Server: data_type plus its length or precision, as the server spells it.
+    private static string? ComposeNativeType(string dataType, int? length, int? precision, int? scale) =>
+        dataType.ToLowerInvariant() switch
+        {
+            "varchar" or "nvarchar" or "char" or "nchar" or "varbinary" or "binary" when length is { } n =>
+                $"{dataType}({(n == -1 ? "max" : n.ToString(System.Globalization.CultureInfo.InvariantCulture))})",
+            "decimal" or "numeric" when precision is { } p => $"{dataType}({p},{scale ?? 0})",
+            _ => dataType,
+        };
+
     private async Task<List<Column>> ReadColumnsAsync(TableRef table, CancellationToken cancellationToken)
     {
-        const string sql = """
-            SELECT column_name, data_type, is_nullable, column_default,
-                   character_maximum_length, numeric_precision, numeric_scale
+        var sql = $"""
+            SELECT column_name, data_type, is_nullable, {DefaultSql} AS column_default,
+                   character_maximum_length, numeric_precision, numeric_scale,
+                   {NativeTypeSql} AS native_type, {ColumnCommentSql} AS column_comment
             FROM information_schema.columns
             WHERE table_name = @t AND (@s IS NULL OR table_schema = @s)
             ORDER BY ordinal_position
@@ -166,6 +245,7 @@ public abstract class InformationSchemaProvider : SchemaProviderBase
                 var scale = IntOrNull(reader, "numeric_scale");
 
                 var (typeOptions, _) = NativeTypeMapper.Map(Provider, dataType, length, precision, scale);
+                var native = StringOrNull(reader, "native_type") ?? ComposeNativeType(dataType, length, precision, scale);
 
                 return new Column
                 {
@@ -173,6 +253,8 @@ public abstract class InformationSchemaProvider : SchemaProviderBase
                     Type = typeOptions,
                     Nullability = nullable ? Nullability.Nullable : Nullability.NotNull,
                     Default = ParseDefault(defaultText),
+                    ProviderOptions = NativeType(Provider, native),
+                    Comment = StringOrNull(reader, "column_comment") is { Length: > 0 } comment ? comment : null,
                 };
             },
             cancellationToken,
@@ -217,9 +299,13 @@ public abstract class InformationSchemaProvider : SchemaProviderBase
         };
     }
 
-    private async Task<List<ForeignKey>> ReadForeignKeysAsync(TableRef table, CancellationToken cancellationToken)
-    {
-        const string sql = """
+    /// <summary>
+    /// Gets the foreign-key query: one row per key column with its referenced
+    /// table and column and the key's rules, filtered by <c>@t</c> and <c>@s</c>.
+    /// The standard form joins the referenced unique constraint by name, which
+    /// MySQL cannot use — every MySQL primary key is named <c>PRIMARY</c>.
+    /// </summary>
+    protected virtual string ForeignKeySql => """
             SELECT rc.constraint_name,
                    kcu.column_name, kcu.ordinal_position,
                    ccu.table_schema AS referenced_schema,
@@ -238,6 +324,9 @@ public abstract class InformationSchemaProvider : SchemaProviderBase
             ORDER BY rc.constraint_name, kcu.ordinal_position
             """;
 
+    private async Task<List<ForeignKey>> ReadForeignKeysAsync(TableRef table, CancellationToken cancellationToken)
+    {
+        var sql = ForeignKeySql;
         var rows = await QueryAsync(
             sql,
             reader => new

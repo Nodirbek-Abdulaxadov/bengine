@@ -22,10 +22,24 @@ public sealed class ServerStore
     };
 
     private readonly object _gate = new();
+    private readonly Dictionary<string, string?> _secrets = new(StringComparer.Ordinal);
 
-    /// <summary>Creates a store over the given file, or the default location when omitted.</summary>
+    /// <summary>
+    /// Creates a store over the given file, or the default location when
+    /// omitted. The default store keeps saved passwords in the operating
+    /// system's keyring when one is available; a store over an explicit file
+    /// uses only the <paramref name="credentials"/> it is given.
+    /// </summary>
     /// <param name="path">The JSON file to use; defaults to <see cref="DefaultPath"/>.</param>
-    public ServerStore(string? path = null) => FilePath = path ?? DefaultPath;
+    /// <param name="credentials">The keyring, or <c>null</c> to keep passwords in the file.</param>
+    public ServerStore(string? path = null, ICredentialStore? credentials = null)
+    {
+        FilePath = path ?? DefaultPath;
+        Credentials = path is null ? credentials ?? CredentialStores.System : credentials;
+    }
+
+    /// <summary>Gets the keyring saved passwords go to, or <c>null</c> when they stay in the file.</summary>
+    public ICredentialStore? Credentials { get; }
 
     /// <summary>
     /// Gets the default store location. The <c>BENGINE_SERVERS_FILE</c>
@@ -85,15 +99,36 @@ public sealed class ServerStore
             var password = profile.SavePassword
                 ? string.IsNullOrEmpty(profile.Password) ? existing?.Password : profile.Password
                 : null;
-            var stored = profile with { Password = password };
+            var sshPassword = profile.SavePassword
+                ? string.IsNullOrEmpty(profile.SshPassword) ? existing?.SshPassword : profile.SshPassword
+                : null;
+            var stored = profile with { Password = password, SshPassword = sshPassword, PasswordInKeyring = false };
+
+            // Prefer the keyring: the file then records only that a password is saved.
+            if (Credentials is { } keyring)
+            {
+                var inKeyring = password is not null || sshPassword is not null;
+                if (inKeyring
+                    && Put(keyring, profile.Id, $"Bengine — {profile.Name}", password)
+                    && Put(keyring, profile.Id + ":ssh", $"Bengine — {profile.Name} (SSH)", sshPassword))
+                {
+                    stored = stored with { PasswordInKeyring = true };
+                }
+                else if (!inKeyring)
+                {
+                    Forget(keyring, profile.Id);
+                }
+            }
+
+            var persisted = stored.PasswordInKeyring ? stored with { Password = null, SshPassword = null } : stored;
 
             if (index >= 0)
             {
-                all[index] = stored;
+                all[index] = persisted;
             }
             else
             {
-                all.Add(stored);
+                all.Add(persisted);
             }
 
             Save(all);
@@ -113,6 +148,10 @@ public sealed class ServerStore
             if (removed)
             {
                 Save(all);
+                if (Credentials is { } keyring)
+                {
+                    Forget(keyring, id);
+                }
             }
 
             return removed;
@@ -129,12 +168,70 @@ public sealed class ServerStore
         try
         {
             var json = File.ReadAllText(FilePath);
-            return JsonSerializer.Deserialize<List<ServerProfile>>(json, JsonOptions) ?? [];
+            var servers = JsonSerializer.Deserialize<List<ServerProfile>>(json, JsonOptions) ?? [];
+            return servers.Select(Unseal).ToList();
         }
         catch (JsonException ex)
         {
             throw new IntrospectionException($"The server list at {FilePath} is not valid JSON. {ex.Message}", ex);
         }
+    }
+
+    // Fills in passwords kept in the keyring (cached for the process).
+    private ServerProfile Unseal(ServerProfile server)
+    {
+        if (!server.PasswordInKeyring || Credentials is not { } keyring)
+        {
+            return server;
+        }
+
+        return server with { Password = Cached(keyring, server.Id), SshPassword = Cached(keyring, server.Id + ":ssh") };
+    }
+
+    private string? Cached(ICredentialStore keyring, string key)
+    {
+        if (!_secrets.TryGetValue(key, out var secret))
+        {
+            try
+            {
+                secret = keyring.Get(key);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                secret = null;
+            }
+
+            _secrets[key] = secret;
+        }
+
+        return secret;
+    }
+
+    private bool Put(ICredentialStore keyring, string key, string label, string? secret)
+    {
+        try
+        {
+            if (secret is null)
+            {
+                keyring.Delete(key);
+                _secrets[key] = null;
+                return true;
+            }
+
+            var stored = keyring.Set(key, label, secret);
+            _secrets[key] = stored ? secret : null;
+            return stored;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return false;
+        }
+    }
+
+    private void Forget(ICredentialStore keyring, string id)
+    {
+        Put(keyring, id, string.Empty, null);
+        Put(keyring, id + ":ssh", string.Empty, null);
     }
 
     private void Save(List<ServerProfile> servers)

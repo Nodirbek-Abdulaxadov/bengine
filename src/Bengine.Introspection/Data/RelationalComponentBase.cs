@@ -32,6 +32,25 @@ public abstract class RelationalComponentBase
     /// <summary>Gets the provider's dialect, used for identifier quoting.</summary>
     protected SqlDialect Dialect { get; }
 
+    /// <summary>
+    /// Gets the source of the session's open transaction, if any. Drivers such as
+    /// MySqlConnector and SqlClient require every command run while a transaction
+    /// is open to be enlisted in it.
+    /// </summary>
+    public Func<DbTransaction?>? TransactionSource { get; init; }
+
+    /// <summary>Gets the transaction new commands enlist in.</summary>
+    protected virtual DbTransaction? CurrentTransaction => TransactionSource?.Invoke();
+
+    /// <summary>Creates a command on the connection, enlisted in the current transaction.</summary>
+    /// <returns>A new command.</returns>
+    protected DbCommand NewCommand()
+    {
+        var command = Connection.CreateCommand();
+        command.Transaction = CurrentTransaction;
+        return command;
+    }
+
     /// <summary>Renders a relation's schema-qualified, quoted name.</summary>
     /// <param name="table">The relation.</param>
     /// <returns>The quoted, optionally schema-qualified name.</returns>
@@ -47,7 +66,7 @@ public abstract class RelationalComponentBase
     protected async Task<IReadOnlyList<string>> ReadColumnNamesAsync(TableRef table, CancellationToken cancellationToken)
     {
         var sql = $"SELECT * FROM {QualifiedName(table)} WHERE 1 = 0";
-        await using var command = Connection.CreateCommand();
+        await using var command = NewCommand();
         command.CommandText = sql;
         try
         {
@@ -99,7 +118,7 @@ public abstract class RelationalComponentBase
     /// <returns>A command ready to execute.</returns>
     protected DbCommand CreateCommand(string sql, List<(string Name, object Value)> parameters)
     {
-        var command = Connection.CreateCommand();
+        var command = NewCommand();
         command.CommandText = sql;
         foreach (var (name, value) in parameters)
         {

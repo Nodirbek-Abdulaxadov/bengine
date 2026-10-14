@@ -1,5 +1,6 @@
 namespace Bengine.Introspection.Providers;
 
+using System.Collections.Frozen;
 using System.Data.Common;
 using Bengine.Enums;
 using Bengine.Introspection.Abstractions;
@@ -29,6 +30,9 @@ public abstract class SchemaProviderBase : IDatabaseExplorer, IDatabaseIntrospec
 
     /// <summary>Gets the provider this instance speaks to.</summary>
     protected DatabaseProvider Provider { get; }
+
+    /// <summary>Gets the source of the session's open transaction, if any, to enlist catalog queries in.</summary>
+    public Func<DbTransaction?>? TransactionSource { get; init; }
 
     /// <inheritdoc />
     public abstract Task<IReadOnlyList<string>> GetDatabasesAsync(CancellationToken cancellationToken = default);
@@ -61,7 +65,35 @@ public abstract class SchemaProviderBase : IDatabaseExplorer, IDatabaseIntrospec
         {
             Name = schema ?? Connection.Database ?? "database",
             Tables = tables,
+            Views = await ReadViewsAsync(schema, cancellationToken).ConfigureAwait(false),
         };
+    }
+
+    /// <summary>Reads the views (and materialized views) of a schema, with their <c>SELECT</c> bodies.</summary>
+    /// <param name="schema">The schema, or <c>null</c> for every user schema.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The views.</returns>
+    protected virtual Task<IReadOnlyList<View>> ReadViewsAsync(string? schema, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<View>>([]);
+
+    /// <summary>Extracts the <c>SELECT</c> body of a <c>CREATE VIEW … AS</c> statement.</summary>
+    /// <param name="ddl">The statement.</param>
+    /// <returns>The text after the view's <c>AS</c>, or the statement when it has none.</returns>
+    protected string ViewBody(string ddl)
+    {
+        var lexemes = Sql.SqlLexer.Lex(ddl, Provider);
+        var view = lexemes.FindIndex(l => l.Is("VIEW"));
+        var depth = 0;
+        for (var i = view + 1; view >= 0 && i < lexemes.Count; i++)
+        {
+            depth += lexemes[i].IsSymbol("(") ? 1 : lexemes[i].IsSymbol(")") ? -1 : 0;
+            if (depth == 0 && lexemes[i].Is("AS"))
+            {
+                return ddl[lexemes[i].End..].Trim().TrimEnd(';').TrimEnd();
+            }
+        }
+
+        return ddl;
     }
 
     /// <summary>Creates a command with the given text and optional parameters.</summary>
@@ -72,6 +104,7 @@ public abstract class SchemaProviderBase : IDatabaseExplorer, IDatabaseIntrospec
     {
         var command = Connection.CreateCommand();
         command.CommandText = sql;
+        command.Transaction = TransactionSource?.Invoke();
         foreach (var (name, value) in parameters)
         {
             var parameter = command.CreateParameter();
@@ -135,6 +168,21 @@ public abstract class SchemaProviderBase : IDatabaseExplorer, IDatabaseIntrospec
         Comment = column.Comment,
         ProviderOptions = column.ProviderOptions,
     };
+
+    /// <summary>Records a column's exact native type for its source provider.</summary>
+    /// <param name="provider">The provider the type belongs to.</param>
+    /// <param name="native">The native type spelling, or <c>null</c>.</param>
+    /// <returns>The provider options carrying the native type.</returns>
+    protected static ProviderOptions NativeType(DatabaseProvider provider, string? native) =>
+        string.IsNullOrWhiteSpace(native)
+            ? ProviderOptions.Empty
+            : new ProviderOptions
+            {
+                Overrides = new Dictionary<DatabaseProvider, ProviderOverride>
+                {
+                    [provider] = new() { NativeTypeName = native.Trim() },
+                }.ToFrozenDictionary(),
+            };
 
     /// <summary>Reads a nullable string column by name, mapping <c>DBNull</c> to <c>null</c>.</summary>
     /// <param name="reader">The reader positioned on a row.</param>

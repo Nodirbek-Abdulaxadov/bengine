@@ -4,7 +4,7 @@
         xmlns:c="clr-namespace:Bengine.Studio.Controls"
         x:Class="Bengine.Studio.Views.ServerDialog"
         x:DataType="vm:ServerFormViewModel"
-        Title="{Binding Title}" Width="600" Height="520" CanResize="False"
+        Title="{Binding Title}" Width="640" Height="580" CanResize="False"
         WindowStartupLocation="CenterOwner" Background="{StaticResource Panel}" FontSize="13">
   <Window.Styles>
     <Style Selector="TextBlock.label">
@@ -31,13 +31,25 @@
     </Border>
     <TabControl SelectedIndex="{Binding TabIndex}" Padding="16,8">
       <TabItem Header="General">
-        <Grid Classes="form" ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto" Margin="0,10">
+        <Grid Classes="form" ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,10">
           <TextBlock Classes="label" Text="Name" />
           <TextBox Grid.Column="1" Text="{Binding Name}" Watermark="e.g. production" />
           <TextBlock Grid.Row="1" Classes="label" Text="Server group" />
           <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Group}" />
-          <TextBlock Grid.Row="2" Classes="label" Text="Comments" VerticalAlignment="Top" Margin="0,8,12,0" />
-          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Comment}" AcceptsReturn="True" Height="90" TextWrapping="Wrap" />
+          <TextBlock Grid.Row="2" Classes="label" Text="Color" />
+          <ListBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding ColorOptions}" SelectedItem="{Binding SelectedColor}" Background="Transparent">
+            <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+              <DataTemplate DataType="vm:ServerColorOption">
+                <Border Width="22" Height="22" CornerRadius="11" ToolTip.Tip="{Binding Name}"
+                        Background="{Binding Swatch, Converter={x:Static c:Converters.AccentBrush}}" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock Grid.Row="3" Classes="label" Text="Read-only" />
+          <CheckBox Grid.Row="3" Grid.Column="1" IsChecked="{Binding ReadOnly}" Content="Refuse changes: no edits, DML, or DDL (production safety)" />
+          <TextBlock Grid.Row="4" Classes="label" Text="Comments" VerticalAlignment="Top" Margin="0,8,12,0" />
+          <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Comment}" AcceptsReturn="True" Height="90" TextWrapping="Wrap" />
         </Grid>
       </TabItem>
       <TabItem Header="Connection">
@@ -57,7 +69,42 @@
           <TextBlock Grid.Row="6" Classes="label" Text="Password" IsVisible="{Binding IsNetwork}" />
           <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding Password}" PasswordChar="•" Watermark="{Binding PasswordHint}" IsVisible="{Binding IsNetwork}" />
           <TextBlock Grid.Row="7" Classes="label" Text="Save password?" IsVisible="{Binding IsNetwork}" />
-          <CheckBox Grid.Row="7" Grid.Column="1" IsChecked="{Binding SavePassword}" Content="Store it in the shared server list (owner-only file)" IsVisible="{Binding IsNetwork}" />
+          <StackPanel Grid.Row="7" Grid.Column="1" Spacing="2" IsVisible="{Binding IsNetwork}">
+            <CheckBox IsChecked="{Binding SavePassword}" Content="Remember the password" />
+            <TextBlock Classes="faint" FontSize="11.5" Text="{Binding PasswordStorage}" TextWrapping="Wrap" />
+          </StackPanel>
+        </Grid>
+      </TabItem>
+      <TabItem Header="SSL" IsVisible="{Binding IsNetwork}">
+        <Grid Classes="form" ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,10">
+          <TextBlock Classes="label" Text="SSL mode" />
+          <ComboBox Grid.Column="1" ItemsSource="{Binding SslModes}" SelectedItem="{Binding SslMode}" HorizontalAlignment="Stretch" />
+          <TextBlock Grid.Row="1" Classes="label" Text="Root certificate (CA)" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SslRootCertificate}" Watermark="/path/to/ca.pem" />
+          <TextBlock Grid.Row="2" Classes="label" Text="Client certificate" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SslClientCertificate}" Watermark="/path/to/client.crt" />
+          <TextBlock Grid.Row="3" Classes="label" Text="Client key" />
+          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding SslClientKey}" Watermark="/path/to/client.key" />
+          <TextBlock Grid.Row="4" Grid.Column="1" Classes="faint" FontSize="11.5" TextWrapping="Wrap"
+                     Text="verify-ca checks the server's certificate against the CA; verify-full also checks its host name. SQL Server uses require/verify-* as Encrypt=Mandatory." />
+        </Grid>
+      </TabItem>
+      <TabItem Header="SSH Tunnel" IsVisible="{Binding IsNetwork}">
+        <Grid Classes="form" ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,10">
+          <TextBlock Classes="label" Text="Use SSH tunnel" />
+          <CheckBox Grid.Column="1" IsChecked="{Binding UseSsh}" Content="Connect through a bastion host" />
+          <TextBlock Grid.Row="1" Classes="label" Text="SSH host" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SshHost}" IsEnabled="{Binding UseSsh}" Watermark="bastion.example.com" />
+          <TextBlock Grid.Row="2" Classes="label" Text="SSH port" />
+          <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding SshPort}" Minimum="1" Maximum="65535" FormatString="0" ShowButtonSpinner="False" IsEnabled="{Binding UseSsh}" />
+          <TextBlock Grid.Row="3" Classes="label" Text="SSH user" />
+          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding SshUser}" IsEnabled="{Binding UseSsh}" />
+          <TextBlock Grid.Row="4" Classes="label" Text="Private key file" />
+          <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding SshKeyFile}" IsEnabled="{Binding UseSsh}" Watermark="~/.ssh/id_ed25519 (leave empty for password)" />
+          <TextBlock Grid.Row="5" Classes="label" Text="Password / passphrase" />
+          <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding SshPassword}" PasswordChar="•" IsEnabled="{Binding UseSsh}" Watermark="{Binding SshPasswordHint}" />
+          <TextBlock Grid.Row="6" Grid.Column="1" Classes="faint" FontSize="11.5" TextWrapping="Wrap"
+                     Text="Host and port on the Connection tab are as the bastion sees them. The bastion's host key is trusted on first connect and a changed key is refused." />
         </Grid>
       </TabItem>
       <TabItem Header="Advanced">

@@ -2,7 +2,7 @@ namespace Bengine.Studio;
 
 using Avalonia;
 
-/// <summary>Desktop entry point for the Bengine Studio database browser.</summary>
+/// <summary>Desktop entry point for Bengine Data Studio.</summary>
 internal static class Program
 {
     /// <summary>Application entry point. Keep free of Avalonia and third-party calls before <see cref="BuildAvaloniaApp"/>.</summary>

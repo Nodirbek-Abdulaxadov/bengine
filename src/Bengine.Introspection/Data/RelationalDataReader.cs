@@ -37,7 +37,14 @@ public sealed class RelationalDataReader : RelationalComponentBase, ITableDataRe
         var qualified = QualifiedName(table);
         var parameters = new List<(string Name, object Value)>();
         var where = BuildWhere(query.Filters, lookup, parameters);
-        var orderBy = BuildOrderBy(query.Sort, lookup);
+        if (!string.IsNullOrWhiteSpace(query.WhereSql))
+        {
+            where = (where.Length == 0 ? " WHERE " : where + " AND ") + $"({query.WhereSql.Trim().TrimEnd(';')})";
+        }
+
+        var orderBy = string.IsNullOrWhiteSpace(query.OrderBySql)
+            ? BuildOrderBy(query.Sort, lookup)
+            : " ORDER BY " + query.OrderBySql.Trim().TrimEnd(';');
 
         long? total = null;
         if (query.IncludeTotalCount)
@@ -82,6 +89,7 @@ public sealed class RelationalDataReader : RelationalComponentBase, ITableDataRe
 
         return new DataPage
         {
+            Sql = DisplaySql(qualified, where, orderBy, parameters),
             Columns = resultColumns,
             ColumnTypes = resultTypes,
             Rows = rows,
@@ -207,13 +215,11 @@ public sealed class RelationalDataReader : RelationalComponentBase, ITableDataRe
         {
             sql.Append(orderBy.Length == 0 ? " ORDER BY (SELECT NULL)" : orderBy);
             sql.Append(CultureInfo.InvariantCulture, $" OFFSET {offset} ROWS FETCH NEXT {fetch} ROWS ONLY");
-        }
-        else
-        {
-            sql.Append(orderBy);
-            sql.Append(CultureInfo.InvariantCulture, $" LIMIT {fetch} OFFSET {offset}");
+            return sql.ToString();
         }
 
+        sql.Append(orderBy);
+        sql.Append(CultureInfo.InvariantCulture, $" LIMIT {fetch} OFFSET {offset}");
         return sql.ToString();
     }
 
@@ -227,6 +233,19 @@ public sealed class RelationalDataReader : RelationalComponentBase, ITableDataRe
         await using var command = CreateCommand(sql, parameters);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is null or DBNull ? 0 : Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    // The page's query without paging, parameters inlined, for "open in console".
+    private string DisplaySql(string qualified, string where, string orderBy, List<(string Name, object Value)> parameters)
+    {
+        var sql = $"SELECT * FROM {qualified}{where}{orderBy}";
+        for (var i = parameters.Count - 1; i >= 0; i--)
+        {
+            var (name, value) = parameters[i];
+            sql = sql.Replace(name, Export.SqlLiterals.Format(value is DBNull ? null : value, Provider), StringComparison.Ordinal);
+        }
+
+        return sql;
     }
 
     private static string AsString(object? value) => value?.ToString() ?? string.Empty;

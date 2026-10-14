@@ -44,6 +44,39 @@ public sealed record ServerProfile
     /// <summary>Gets a value indicating whether the password is persisted with the registration.</summary>
     public bool SavePassword { get; init; }
 
+    /// <summary>
+    /// Gets a value indicating whether the saved password lives in the operating
+    /// system's keyring rather than in the server list file.
+    /// </summary>
+    public bool PasswordInKeyring { get; init; }
+
+    /// <summary>Gets the SSH tunnel's host, or <c>null</c> to connect directly.</summary>
+    public string? SshHost { get; init; }
+
+    /// <summary>Gets the SSH port, or <c>null</c> for 22.</summary>
+    public int? SshPort { get; init; }
+
+    /// <summary>Gets the SSH user.</summary>
+    public string? SshUser { get; init; }
+
+    /// <summary>Gets the private key file for SSH, or <c>null</c> to authenticate with <see cref="SshPassword"/>.</summary>
+    public string? SshKeyFile { get; init; }
+
+    /// <summary>Gets the SSH password, or the key file's passphrase (saved like <see cref="Password"/>).</summary>
+    public string? SshPassword { get; init; }
+
+    /// <summary>Gets the SSL mode: <c>disable</c>, <c>prefer</c>, <c>require</c>, <c>verify-ca</c>, or <c>verify-full</c>; <c>null</c> for the driver default.</summary>
+    public string? SslMode { get; init; }
+
+    /// <summary>Gets the certificate authority file used to verify the server, or <c>null</c>.</summary>
+    public string? SslRootCertificate { get; init; }
+
+    /// <summary>Gets the client certificate file, or <c>null</c>.</summary>
+    public string? SslClientCertificate { get; init; }
+
+    /// <summary>Gets the client key file, or <c>null</c>.</summary>
+    public string? SslClientKey { get; init; }
+
     /// <summary>Gets the database file path; used only by SQLite.</summary>
     public string? FilePath { get; init; }
 
@@ -57,8 +90,22 @@ public sealed record ServerProfile
     /// <summary>Gets an optional free-text comment.</summary>
     public string? Comment { get; init; }
 
+    /// <summary>
+    /// Gets the color that marks the server's tree, tabs, and editors (a
+    /// <c>#rrggbb</c> value), so a production server is hard to mistake, or
+    /// <c>null</c> for none.
+    /// </summary>
+    public string? Color { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether sessions on the server are read-only: the
+    /// server refuses writes where it supports read-only sessions, and the
+    /// clients refuse modifying statements and data edits.
+    /// </summary>
+    public bool ReadOnly { get; init; }
+
     /// <summary>Gets a short description of the endpoint, for display (<c>host:port</c> or the file path).</summary>
     public string Endpoint => Provider == DatabaseProvider.Sqlite
         ? FilePath ?? string.Empty
-        : Port is { } port ? $"{Host}:{port}" : Host ?? string.Empty;
+        : (Port is { } port ? $"{Host}:{port}" : Host ?? string.Empty) + (SshHost is { } ssh ? $" via ssh {ssh}" : string.Empty);
 }

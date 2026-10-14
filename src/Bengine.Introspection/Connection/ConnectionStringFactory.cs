@@ -57,8 +57,38 @@ public static class ConnectionStringFactory
             builder.Password = password;
         }
 
+        if (Ssl(server.SslMode) is { } mode)
+        {
+            builder.SslMode = mode switch
+            {
+                "disable" => SslMode.Disable,
+                "require" => SslMode.Require,
+                "verify-ca" => SslMode.VerifyCA,
+                "verify-full" => SslMode.VerifyFull,
+                _ => SslMode.Prefer,
+            };
+        }
+
+        if (!string.IsNullOrWhiteSpace(server.SslRootCertificate))
+        {
+            builder.RootCertificate = server.SslRootCertificate;
+        }
+
+        if (!string.IsNullOrWhiteSpace(server.SslClientCertificate))
+        {
+            builder.SslCertificate = server.SslClientCertificate;
+        }
+
+        if (!string.IsNullOrWhiteSpace(server.SslClientKey))
+        {
+            builder.SslKey = server.SslClientKey;
+        }
+
         return builder.ConnectionString;
     }
+
+    // Normalized SSL mode, or null for the driver default.
+    private static string? Ssl(string? mode) => string.IsNullOrWhiteSpace(mode) ? null : mode.Trim().ToLowerInvariant();
 
     private static string BuildSqlServer(ServerProfile server, string? database, string? password)
     {
@@ -76,6 +106,21 @@ public static class ConnectionStringFactory
         if (!string.IsNullOrEmpty(password))
         {
             builder.Password = password;
+        }
+
+        switch (Ssl(server.SslMode))
+        {
+            case "disable" or "prefer":
+                builder.Encrypt = SqlConnectionEncryptOption.Optional;
+                break;
+            case "require":
+                builder.Encrypt = SqlConnectionEncryptOption.Mandatory;
+                builder.TrustServerCertificate = true;
+                break;
+            case "verify-ca" or "verify-full":
+                builder.Encrypt = SqlConnectionEncryptOption.Mandatory;
+                builder.TrustServerCertificate = false;
+                break;
         }
 
         return builder.ConnectionString;
@@ -99,6 +144,33 @@ public static class ConnectionStringFactory
         if (!string.IsNullOrEmpty(password))
         {
             builder.Password = password;
+        }
+
+        if (Ssl(server.SslMode) is { } mode)
+        {
+            builder.SslMode = mode switch
+            {
+                "disable" => MySqlSslMode.None,
+                "require" => MySqlSslMode.Required,
+                "verify-ca" => MySqlSslMode.VerifyCA,
+                "verify-full" => MySqlSslMode.VerifyFull,
+                _ => MySqlSslMode.Preferred,
+            };
+        }
+
+        if (!string.IsNullOrWhiteSpace(server.SslRootCertificate))
+        {
+            builder.SslCa = server.SslRootCertificate;
+        }
+
+        if (!string.IsNullOrWhiteSpace(server.SslClientCertificate))
+        {
+            builder.SslCert = server.SslClientCertificate;
+        }
+
+        if (!string.IsNullOrWhiteSpace(server.SslClientKey))
+        {
+            builder.SslKey = server.SslClientKey;
         }
 
         return builder.ConnectionString;

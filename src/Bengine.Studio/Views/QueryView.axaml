@@ -1,46 +1,97 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Bengine.Studio.ViewModels"
+             xmlns:v="clr-namespace:Bengine.Studio.Views"
              xmlns:c="clr-namespace:Bengine.Studio.Controls"
              x:Class="Bengine.Studio.Views.QueryView"
              x:DataType="vm:QueryDocumentViewModel">
-  <Grid RowDefinitions="Auto,2*,4,3*">
-    <Border Grid.Row="0" Classes="toolbar">
+  <Grid RowDefinitions="Auto,3*,4,2*">
+    <!-- Toolbar -->
+    <Border Grid.Row="0" Classes="toolbar" BorderThickness="0,0,0,1"
+            BorderBrush="{Binding AccentColor, Converter={x:Static c:Converters.AccentBrush}}">
       <DockPanel>
-        <TextBlock DockPanel.Dock="Right" Classes="dim" Text="{Binding Location}" VerticalAlignment="Center" />
-        <StackPanel Orientation="Horizontal" Spacing="6">
-          <Button Classes="primary" Content="▶ Execute" ToolTip.Tip="Execute (F5 / Ctrl+Enter)" Click="OnExecute" />
-          <Button Classes="ghost" Content="Explain" Click="OnExplain" />
-          <TextBlock Classes="dim" Text="Limit" VerticalAlignment="Center" Margin="8,0,0,0" />
-          <ComboBox ItemsSource="{Binding Limits}" SelectedItem="{Binding MaxRows}" />
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Classes="dim mono" Text="{Binding Elapsed}" VerticalAlignment="Center" />
+          <Border Background="#3a1d1d" CornerRadius="3" Padding="6,1" IsVisible="{Binding IsReadOnly}" VerticalAlignment="Center">
+            <TextBlock Text="read-only" Foreground="{StaticResource Danger}" FontSize="11" />
+          </Border>
         </StackPanel>
+        <WrapPanel VerticalAlignment="Center">
+          <Button Classes="primary" Content="▶ Run" ToolTip.Tip="Run the statement under the caret, or the selection (Ctrl+Enter)" Click="OnRun" Margin="0,0,4,0" />
+          <Button Classes="ghost" Content="▶▶ Script" ToolTip.Tip="Run every statement (Ctrl+Shift+Enter)" Click="OnRunScript" Margin="0,0,4,0" />
+          <Button Classes="ghost danger" Content="■ Stop" ToolTip.Tip="Cancel the running statement (Ctrl+F2)" Command="{Binding CancelCommand}" IsEnabled="{Binding IsBusy}" Margin="0,0,4,0" />
+          <Button Classes="ghost" Content="Explain ▾" Margin="0,0,4,0">
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                <MenuItem Header="Explain Plan" Click="OnExplain" />
+                <MenuItem Header="Explain Analyze (runs the statement)" Click="OnExplainAnalyze" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+          <Border Classes="sep" />
+          <TextBlock Classes="dim" Text="Tx" VerticalAlignment="Center" Margin="0,0,4,0" />
+          <ComboBox ItemsSource="{Binding TransactionModes}" SelectedItem="{Binding TransactionMode}" MinWidth="86" Margin="0,0,4,0" ToolTip.Tip="Auto-commit, or manual transactions ended with Commit/Rollback" />
+          <ComboBox ItemsSource="{Binding IsolationLevels}" SelectedItem="{Binding Isolation}" MinWidth="110" Margin="0,0,4,0"
+                    IsVisible="{Binding TransactionMode, Converter={x:Static c:Converters.IsManual}}" ToolTip.Tip="Isolation level of new transactions" />
+          <Button Classes="ghost" Content="✓ Commit" Command="{Binding CommitCommand}" IsEnabled="{Binding InTransaction}" Margin="0,0,4,0" />
+          <Button Classes="ghost" Content="↶ Rollback" Command="{Binding RollbackCommand}" IsEnabled="{Binding InTransaction}" Margin="0,0,4,0" />
+          <Border Background="#3a2f12" CornerRadius="3" Padding="6,1" IsVisible="{Binding InTransaction}" VerticalAlignment="Center" Margin="0,0,4,0">
+            <TextBlock Foreground="#e0b341" FontSize="11" Text="{Binding PendingStatements, StringFormat='tx open · {0}'}" />
+          </Border>
+          <Border Classes="sep" />
+          <ComboBox ItemsSource="{Binding Databases}" SelectedItem="{Binding Database}" MinWidth="140" Margin="0,0,4,0" ToolTip.Tip="Database" />
+          <Button Classes="tool" Content="💾" ToolTip.Tip="Save to a SQL file (Ctrl+S; Ctrl+Shift+S saves as)" Command="{Binding SaveFileCommand}" />
+          <Button Classes="tool" Content="⧗" ToolTip.Tip="Local history of the file" Command="{Binding ShowLocalHistoryCommand}" IsVisible="{Binding HasFile}" />
+          <Button Classes="tool" Content="⟲" ToolTip.Tip="Query history (Ctrl+Alt+E)" Command="{Binding ShowHistoryCommand}" />
+          <Button Classes="tool" Content="✎" ToolTip.Tip="Reformat SQL (Ctrl+Alt+L)" Click="OnFormat" />
+          <Button Classes="tool" Content="⟳" ToolTip.Tip="Reload metadata for completion" Command="{Binding RefreshCatalogCommand}" />
+        </WrapPanel>
       </DockPanel>
     </Border>
 
-    <TextBox Grid.Row="1" x:Name="Editor" Text="{Binding QueryText}" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
-             FontFamily="{StaticResource Mono}" FontSize="13" Background="#0b1015" BorderThickness="0" CornerRadius="0" Padding="14,10"
-             Watermark="-- Write SQL here. F5 or Ctrl+Enter runs the selection, or everything when nothing is selected."
-             ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+    <c:SqlEditor Grid.Row="1" x:Name="Editor" />
 
     <GridSplitter Grid.Row="2" Background="{StaticResource Line}" ResizeDirection="Rows" />
 
     <DockPanel Grid.Row="3">
-      <Border DockPanel.Dock="Top" Background="{StaticResource Panel}" Padding="10,2">
+      <Border DockPanel.Dock="Top" Background="{StaticResource Panel}" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,0,0,1" Padding="6,0">
         <DockPanel>
-          <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="760"
-                     Foreground="{Binding IsError, Converter={x:Static c:Converters.StatusBrush}}" />
-          <TabStrip SelectedIndex="{Binding ResultTabIndex}">
-            <TabStripItem Content="Data Output" />
-            <TabStripItem Content="Messages" />
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="700"
+                       Foreground="{Binding IsError, Converter={x:Static c:Converters.StatusBrush}}" />
+            <TextBlock Classes="dim" Text="Max rows" VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding Limits}" SelectedItem="{Binding MaxRows}" MinHeight="24" Padding="8,1" FontSize="12" />
+            <Button Classes="tool" Content="⌫" ToolTip.Tip="Clear output and unpinned results" Command="{Binding ClearOutputCommand}" />
+          </StackPanel>
+          <TabStrip ItemsSource="{Binding ResultTabs}" SelectedItem="{Binding SelectedResult}">
+            <TabStrip.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Title}" />
+              </DataTemplate>
+            </TabStrip.ItemTemplate>
           </TabStrip>
         </DockPanel>
       </Border>
       <Panel>
-        <DataGrid x:Name="Grid" ItemsSource="{Binding Rows}" AutoGenerateColumns="False" IsReadOnly="True"
-                  HeadersVisibility="All" CanUserResizeColumns="True"
-                  IsVisible="{Binding ResultTabIndex, Converter={x:Static c:Converters.IsZero}}" />
-        <ListBox ItemsSource="{Binding Messages}" FontFamily="{StaticResource Mono}" FontSize="12.5" Background="{StaticResource Bg}"
-                 IsVisible="{Binding ResultTabIndex, Converter={x:Static c:Converters.IsNonZero}}" />
+        <ContentControl Content="{Binding SelectedResult}">
+          <ContentControl.DataTemplates>
+            <DataTemplate DataType="vm:ResultSetViewModel"><v:ResultView /></DataTemplate>
+            <DataTemplate DataType="vm:PlanResultViewModel"><v:PlanView /></DataTemplate>
+            <DataTemplate DataType="vm:OutputTabViewModel">
+              <ListBox ItemsSource="{Binding Messages}" Background="{StaticResource Bg}" x:Name="Log">
+                <ListBox.ItemTemplate>
+                  <DataTemplate DataType="vm:MessageLine">
+                    <DockPanel>
+                      <TextBlock DockPanel.Dock="Left" Classes="faint mono" FontSize="12" Text="{Binding Stamp}" Margin="0,0,10,0" />
+                      <TextBlock Classes="mono" FontSize="12.5" TextWrapping="Wrap" Text="{Binding Text}"
+                                 Foreground="{Binding Kind, Converter={x:Static c:Converters.MessageBrush}}" />
+                    </DockPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </DataTemplate>
+          </ContentControl.DataTemplates>
+        </ContentControl>
         <ProgressBar IsIndeterminate="True" VerticalAlignment="Top" Height="2" MinHeight="2" IsVisible="{Binding IsBusy}" />
       </Panel>
     </DockPanel>

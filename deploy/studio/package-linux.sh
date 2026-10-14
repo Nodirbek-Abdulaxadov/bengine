@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Linux packages for Bengine Studio: .deb (Debian/Ubuntu — menu entry and icon,
+# Linux packages for Bengine Data Studio: .deb (Debian/Ubuntu — menu entry and icon,
 # apt installs the dependencies) and .AppImage (any distribution, no install).
 # Neither needs a .NET runtime: the app is published self-contained as a single
 # file. Used by release-studio.yml and runnable locally:
@@ -37,7 +37,7 @@ Installed-Size: $(du -sk "$DEB" | cut -f1)
 Depends: libc6, libstdc++6, libfontconfig1, libx11-6, libice6, libsm6,
  libssl3t64 | libssl3,
  libicu78 | libicu77 | libicu76 | libicu75 | libicu74 | libicu72 | libicu71 | libicu70
-Description: Bengine Studio — database explorer
+Description: Bengine Data Studio — database IDE
  A pgAdmin-style desktop explorer for PostgreSQL, MySQL, SQL Server, and
  SQLite: object tree, properties and DDL, data editing, and a query tool.
 CONTROL
@@ -52,7 +52,7 @@ if [[ -z "$TOOL" ]]; then
   exit 0
 fi
 
-APP=$WORK/BengineStudio.AppDir
+APP=$WORK/BengineDataStudio.AppDir
 mkdir -p "$APP/usr/bin"
 install -m 755 "$SRC/bengine-studio" "$APP/usr/bin/bengine-studio"
 install -m 644 "$HERE/bengine-studio.png" "$APP/bengine-studio.png"
@@ -66,5 +66,5 @@ exec "$HERE/usr/bin/bengine-studio" "$@"
 RUN
 chmod 755 "$APP/AppRun"
 chmod -R u=rwX,go=rX "$APP"
-ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" --no-appstream "$APP" "$DIST/BengineStudio-${VERSION}-x86_64.AppImage" >/dev/null
-echo "$DIST/BengineStudio-${VERSION}-x86_64.AppImage"
+ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" --no-appstream "$APP" "$DIST/BengineDataStudio-${VERSION}-x86_64.AppImage" >/dev/null
+echo "$DIST/BengineDataStudio-${VERSION}-x86_64.AppImage"

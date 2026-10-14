@@ -1,0 +1,151 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Bengine.Studio.ViewModels"
+        xmlns:d="clr-namespace:Bengine.Introspection.Design;assembly=Bengine.Introspection"
+        xmlns:c="clr-namespace:Bengine.Studio.Controls"
+        x:Class="Bengine.Studio.Views.TableEditorDialog"
+        x:DataType="vm:TableEditorViewModel"
+        Title="{Binding Title}" Width="1100" Height="760" MinWidth="800" MinHeight="560"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource Panel}" FontSize="13">
+  <Window.Styles>
+    <Style Selector="TabItem">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="12,4" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="Foreground" Value="{StaticResource Dim}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+    </Style>
+  </Window.Styles>
+  <DockPanel>
+    <!-- Footer -->
+    <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="16,10">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+          <Button Classes="ghost" Content="Copy SQL" Command="{Binding CopySqlCommand}" />
+          <Button Classes="ghost" Content="Cancel" Command="{Binding CancelCommand}" />
+          <Button Classes="primary" Content="Apply" Command="{Binding ApplyCommand}" IsEnabled="{Binding !IsReadOnly}" ToolTip.Tip="Run the script (in one transaction where the database allows it)" />
+        </StackPanel>
+        <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="700"
+                   Foreground="{Binding IsError, Converter={x:Static c:Converters.StatusBrush}}" />
+      </DockPanel>
+    </Border>
+
+    <!-- Name / comment -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,2*,Auto,3*" Margin="16,12,16,6">
+      <TextBlock Classes="label" Text="Table" />
+      <TextBox Grid.Column="1" Text="{Binding Name}" FontFamily="{StaticResource Mono}" />
+      <TextBlock Grid.Column="2" Classes="label" Text="Comment" Margin="16,0,8,0" />
+      <TextBox Grid.Column="3" Text="{Binding Comment}" />
+    </Grid>
+
+    <!-- Preview -->
+    <Border DockPanel.Dock="Bottom" Height="210" Margin="16,6,16,8" BorderBrush="{StaticResource Line}" BorderThickness="1">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="SQL preview" Classes="dim" Margin="8,4" FontSize="12" />
+        <c:SqlEditor x:Name="PreviewEditor" IsReadOnly="True" HighlightStatement="False" ShowLineNumbers="False" />
+      </DockPanel>
+    </Border>
+    <ProgressBar DockPanel.Dock="Bottom" IsIndeterminate="True" Height="2" MinHeight="2" IsVisible="{Binding IsBusy}" Margin="16,0" />
+
+    <TabControl Margin="16,0" Padding="0,6,0,0">
+      <TabItem Header="Columns">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="4" Margin="0,0,0,6">
+            <Button Classes="ghost" Content="＋ Column" Command="{Binding AddColumnCommand}" />
+            <Button Classes="ghost danger" Content="－ Remove" Command="{Binding RemoveColumnCommand}" />
+            <Button Classes="tool" Content="↑" ToolTip.Tip="Move up" Command="{Binding MoveUpCommand}" />
+            <Button Classes="tool" Content="↓" ToolTip.Tip="Move down" Command="{Binding MoveDownCommand}" />
+          </StackPanel>
+          <DataGrid x:Name="ColumnsGrid" ItemsSource="{Binding Columns}" SelectedItem="{Binding SelectedColumn}" AutoGenerateColumns="False"
+                    CanUserSortColumns="False" HeadersVisibility="Column" RowHeight="30">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="170" FontFamily="{StaticResource Mono}" />
+              <DataGridTemplateColumn Header="Type" Width="190">
+                <DataGridTemplateColumn.CellTemplate>
+                  <DataTemplate DataType="vm:ColumnRow">
+                    <TextBlock Text="{Binding Type}" Margin="8,0" VerticalAlignment="Center" Foreground="#82aaff" FontFamily="{StaticResource Mono}" />
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellTemplate>
+                <DataGridTemplateColumn.CellEditingTemplate>
+                  <DataTemplate DataType="vm:ColumnRow">
+                    <AutoCompleteBox Text="{Binding Type, Mode=TwoWay}" FilterMode="StartsWith" MinimumPrefixLength="0"
+                                     ItemsSource="{Binding $parent[Window].((vm:TableEditorViewModel)DataContext).TypeSuggestions}" />
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellEditingTemplate>
+              </DataGridTemplateColumn>
+              <DataGridCheckBoxColumn Header="Null" Binding="{Binding Nullable}" Width="76" />
+              <DataGridTextColumn Header="Default" Binding="{Binding Default}" Width="150" FontFamily="{StaticResource Mono}" />
+              <DataGridCheckBoxColumn Header="PK" Binding="{Binding PrimaryKey}" Width="66" />
+              <DataGridCheckBoxColumn Header="Identity" Binding="{Binding Identity}" Width="96" />
+              <DataGridTextColumn Header="Comment" Binding="{Binding Comment}" Width="*" />
+              <DataGridTextColumn Header="" Binding="{Binding Renamed}" IsReadOnly="True" Width="90" Foreground="#e0b341" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </TabItem>
+      <TabItem Header="Indexes">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="4" Margin="0,0,0,6">
+            <Button Classes="ghost" Content="＋ Index" Command="{Binding AddIndexCommand}" />
+            <Button Classes="ghost danger" Content="－ Remove" Command="{Binding RemoveIndexCommand}" />
+          </StackPanel>
+          <DataGrid x:Name="IndexesGrid" ItemsSource="{Binding Indexes}" SelectedItem="{Binding SelectedIndex}" AutoGenerateColumns="False" HeadersVisibility="Column" RowHeight="30">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" x:DataType="d:IndexDesign" Width="220" />
+              <DataGridTextColumn Header="Columns (a, b DESC)" Binding="{Binding Columns}" x:DataType="d:IndexDesign" Width="260" />
+              <DataGridCheckBoxColumn Header="Unique" Binding="{Binding Unique}" x:DataType="d:IndexDesign" Width="90" />
+              <DataGridTextColumn Header="Where (partial)" Binding="{Binding Filter}" x:DataType="d:IndexDesign" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </TabItem>
+      <TabItem Header="Foreign Keys">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="4" Margin="0,0,0,6">
+            <Button Classes="ghost" Content="＋ Foreign Key" Command="{Binding AddForeignKeyCommand}" />
+            <Button Classes="ghost danger" Content="－ Remove" Command="{Binding RemoveForeignKeyCommand}" />
+          </StackPanel>
+          <DataGrid x:Name="KeysGrid" ItemsSource="{Binding ForeignKeys}" SelectedItem="{Binding SelectedForeignKey}" AutoGenerateColumns="False" HeadersVisibility="Column" RowHeight="30">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" x:DataType="d:ForeignKeyDesign" Width="190" />
+              <DataGridTextColumn Header="Columns" Binding="{Binding Columns}" x:DataType="d:ForeignKeyDesign" Width="150" />
+              <DataGridTextColumn Header="References table" Binding="{Binding ReferencedTable}" x:DataType="d:ForeignKeyDesign" Width="170" />
+              <DataGridTextColumn Header="Columns" Binding="{Binding ReferencedColumns}" x:DataType="d:ForeignKeyDesign" Width="130" />
+              <DataGridTemplateColumn Header="On delete" Width="130">
+                <DataGridTemplateColumn.CellTemplate>
+                  <DataTemplate DataType="d:ForeignKeyDesign">
+                    <ComboBox SelectedItem="{Binding OnDelete, Mode=TwoWay}" ItemsSource="{Binding $parent[Window].((vm:TableEditorViewModel)DataContext).Actions}" BorderThickness="0" Background="Transparent" SelectionChanged="OnChanged" />
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellTemplate>
+              </DataGridTemplateColumn>
+              <DataGridTemplateColumn Header="On update" Width="130">
+                <DataGridTemplateColumn.CellTemplate>
+                  <DataTemplate DataType="d:ForeignKeyDesign">
+                    <ComboBox SelectedItem="{Binding OnUpdate, Mode=TwoWay}" ItemsSource="{Binding $parent[Window].((vm:TableEditorViewModel)DataContext).Actions}" BorderThickness="0" Background="Transparent" SelectionChanged="OnChanged" />
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellTemplate>
+              </DataGridTemplateColumn>
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </TabItem>
+      <TabItem Header="Checks">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="4" Margin="0,0,0,6">
+            <Button Classes="ghost" Content="＋ Check" Command="{Binding AddCheckCommand}" />
+            <Button Classes="ghost danger" Content="－ Remove" Command="{Binding RemoveCheckCommand}" />
+          </StackPanel>
+          <DataGrid x:Name="ChecksGrid" ItemsSource="{Binding Checks}" SelectedItem="{Binding SelectedCheck}" AutoGenerateColumns="False" HeadersVisibility="Column" RowHeight="30">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" x:DataType="d:CheckDesign" Width="220" />
+              <DataGridTextColumn Header="Expression" Binding="{Binding Expression}" x:DataType="d:CheckDesign" Width="*" FontFamily="{StaticResource Mono}" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>

@@ -1,5 +1,5 @@
-; Windows installer (Inno Setup 6): BengineStudio-Setup-<version>-x64.exe. Installs per user without
-; admin rights (%LOCALAPPDATA%\Programs\Bengine Studio), adds a Start menu entry, an optional desktop
+; Windows installer (Inno Setup 6): BengineDataStudio-Setup-<version>-x64.exe. Installs per user without
+; admin rights (%LOCALAPPDATA%\Programs\Bengine Data Studio), adds a Start menu entry, an optional desktop
 ; shortcut, and an uninstaller. No .NET runtime is needed.
 ;   iscc /DVersion=1.0.0 /DSource=<publish folder> /DOutputDir=<output> deploy\studio\bengine-studio.iss
 #ifndef Version
@@ -8,21 +8,21 @@
 
 [Setup]
 AppId={{B3E5A7C1-4F2D-4C8E-9A61-7D2E0B5C3F18}
-AppName=Bengine Studio
+AppName=Bengine Data Studio
 AppVersion={#Version}
 AppPublisher=Bengine
 AppPublisherURL=https://github.com/Nodirbek-Abdulaxadov/bengine
-DefaultDirName={localappdata}\Programs\Bengine Studio
+DefaultDirName={localappdata}\Programs\Bengine Data Studio
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
-OutputBaseFilename=BengineStudio-Setup-{#Version}-x64
+OutputBaseFilename=BengineDataStudio-Setup-{#Version}-x64
 SetupIconFile=bengine-studio.ico
 UninstallDisplayIcon={app}\bengine-studio.exe
-UninstallDisplayName=Bengine Studio
+UninstallDisplayName=Bengine Data Studio
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -36,9 +36,13 @@ Source: "{#Source}\bengine-studio.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; Native libraries the single-file host could not embed (if any).
 Source: "{#Source}\*.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
+[InstallDelete]
+Type: files; Name: "{autoprograms}\Bengine Studio.lnk"
+Type: files; Name: "{autodesktop}\Bengine Studio.lnk"
+
 [Icons]
-Name: "{autoprograms}\Bengine Studio"; Filename: "{app}\bengine-studio.exe"
-Name: "{autodesktop}\Bengine Studio"; Filename: "{app}\bengine-studio.exe"; Tasks: desktopicon
+Name: "{autoprograms}\Bengine Data Studio"; Filename: "{app}\bengine-studio.exe"
+Name: "{autodesktop}\Bengine Data Studio"; Filename: "{app}\bengine-studio.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\bengine-studio.exe"; Description: "{cm:LaunchProgram,Bengine Studio}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\bengine-studio.exe"; Description: "{cm:LaunchProgram,Bengine Data Studio}"; Flags: nowait postinstall skipifsilent
