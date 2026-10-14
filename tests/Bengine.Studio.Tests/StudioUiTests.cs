@@ -54,7 +54,7 @@ public sealed class StudioUiTests
         var store = new ServerStore(Path.Combine(dir, "servers.json"));
         store.Upsert(new ServerProfile { Name = "shop (sqlite)", Provider = DatabaseProvider.Sqlite, FilePath = file });
 
-        await WalkAsync(store, "sqlite", ["Databases", "main", "Tables"], "users", "main", "SELECT * FROM users;");
+        await WalkAsync(store, "sqlite", ["main", "tables"], "users", "main", "SELECT * FROM users;");
         SqliteConnection.ClearAllPools();
     }
 
@@ -96,7 +96,7 @@ public sealed class StudioUiTests
             });
             store.Upsert(new ServerProfile { Name = "remote-pg", Provider = DatabaseProvider.PostgreSql, Host = "203.0.113.1", Port = 5432, Username = "admin" });
 
-            await WalkAsync(store, "pg", ["Databases", scratch, "Schemas", "public", "Tables"], "Users", scratch,
+            await WalkAsync(store, "pg", [scratch, "public", "tables"], "Users", scratch,
                 "SELECT table_schema, count(*) AS tables\nFROM information_schema.tables\nGROUP BY 1\nORDER BY 2 DESC;");
         }
         finally
@@ -219,7 +219,7 @@ public sealed class StudioUiTests
         await Until(() => vm.Roots.Count > 0);
         Shot(window, $"{prefix}-0-start");
 
-        var item = vm.Roots[0].Children[0];
+        var item = vm.ServerItems.First();
         item.IsExpanded = true;
         await Until(() => !item.IsLoading && item.Children.Count > 0 && !item.Children[0].IsPlaceholder);
         foreach (var label in path)
@@ -232,19 +232,16 @@ public sealed class StudioUiTests
         var tableItem = item.Children.First(c => c.Label == table);
         tableItem.IsExpanded = true;
         await Until(() => !tableItem.IsLoading && !tableItem.Children[0].IsPlaceholder);
-        var columns = tableItem.Children.First(c => c.Label == "Columns");
-        columns.IsExpanded = true;
-        await Until(() => !columns.IsLoading && !columns.Children[0].IsPlaceholder);
+        Assert.Equal("Column", tableItem.Children[0].Kind);
 
         vm.SelectedItem = tableItem;
-        await Until(() => vm.PropertiesTab.Rows.Count > 0);
-        Assert.Contains(vm.PropertiesTab.Rows, r => r.Name == "Name" && r.Value == table);
-        Shot(window, $"{prefix}-1-properties");
+        await window.ShowQuickDocAsync(tableItem);
+        Assert.Contains(vm.QuickDoc.Rows, r => r.Name == "Name" && r.Value == table);
+        Shot(window, $"{prefix}-1-quick-doc");
 
-        vm.ActiveTab = vm.SqlTab;
-        await Until(() => vm.SqlTab.Sql is not null);
-        Assert.Contains("CREATE TABLE", vm.SqlTab.Sql!);
-        Shot(window, $"{prefix}-2-sql");
+        var ddl = await vm.OpenDdlAsync(tableItem);
+        Assert.Contains("CREATE TABLE", ddl!.Sql!);
+        Shot(window, $"{prefix}-2-ddl");
 
         vm.OpenData(tableItem);
         var data = vm.Tabs.OfType<DataDocumentViewModel>().Single();

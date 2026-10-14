@@ -1,6 +1,8 @@
 namespace Bengine.Studio.Views;
 
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
@@ -26,6 +28,9 @@ public partial class MainWindow : Window, IDialogService
     private readonly ServerStore _store;
     private readonly TreeView _tree;
     private readonly TreeView _fileTree;
+    private readonly Avalonia.Threading.DispatcherTimer _speedTimer = new() { Interval = TimeSpan.FromSeconds(2.5) };
+    private (TreeItemViewModel Item, bool Expanded)? _pressed;
+    private string _speed = string.Empty;
 
     /// <summary>Creates the window (for the designer).</summary>
     public MainWindow()
@@ -41,8 +46,11 @@ public partial class MainWindow : Window, IDialogService
         AvaloniaXamlLoader.Load(this);
         _tree = this.FindControl<TreeView>("Tree")!;
         _tree.ContextRequested += OnTreeContextRequested;
-        _tree.DoubleTapped += OnTreeDoubleTapped;
-        _tree.KeyDown += OnTreeKeyDown;
+        _tree.AddHandler(PointerPressedEvent, OnTreePointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        _tree.AddHandler(DoubleTappedEvent, OnTreeDoubleTapped, RoutingStrategies.Bubble, handledEventsToo: true);
+        _tree.AddHandler(KeyDownEvent, OnTreeKeyDown, RoutingStrategies.Tunnel);
+        _tree.AddHandler(TextInputEvent, OnTreeTextInput, RoutingStrategies.Tunnel);
+        _speedTimer.Tick += (_, _) => EndSpeedSearch();
         _fileTree = this.FindControl<TreeView>("FileTree")!;
         _fileTree.DoubleTapped += (_, e) => OpenFile(e.Source);
         _fileTree.KeyDown += OnFileTreeKeyDown;
@@ -262,10 +270,14 @@ public partial class MainWindow : Window, IDialogService
             case "editor.replace" when view is not null: return Do(view.EditorControl.OpenReplace);
             case "tree.filter": return Do(() => this.FindControl<TextBox>("TreeFilter")?.Focus());
             case "tree.refresh": return Do(() => vm.RefreshCommand.Execute(null));
+            case "object.open" when item is { IsPlaceholder: false }: return Do(() => Open(item));
+            case "object.ddl" when item is { IsPlaceholder: false, IsFolder: false, Node: not null }: return Do(() => _ = vm.OpenDdlAsync(item));
+            case "object.quickDoc" when item is { IsPlaceholder: false }: return Do(() => _ = ShowQuickDocAsync(item));
+            case "object.console" when item?.Server is { } server: return Do(() => _ = vm.OpenQueryAsync(server, item.Node?.Ref.Database));
+            case "object.copyReference" when item is { IsPlaceholder: false }: return Do(() => _ = SetClipboardAsync(ExplorerViewModel.ReferenceOf(item)));
             case "object.rename" when item is not null && ExplorerViewModel.CanRename(item): return Do(() => _ = vm.RenameAsync(item));
             case "object.drop" when item is not null && ExplorerViewModel.CanDrop(item): return Do(() => _ = vm.DropAsync(item));
             case "object.findUsages" when item is not null && ExplorerViewModel.CanFindUsages(item): return Do(() => _ = vm.ShowUsagesAsync(item));
-            case "object.ddl" when item is not null && RelationKinds.Contains(item.Kind): return Do(() => _ = vm.GenerateSqlAsync(item, "ddl"));
             default:
                 vm.Status = $"{Keymap.Actions.FirstOrDefault(a => a.Id == id)?.Title ?? id}: not available here.";
                 return false;
@@ -375,16 +387,59 @@ public partial class MainWindow : Window, IDialogService
     private static TreeItemViewModel? ItemFrom(object? source) =>
         (source as Control)?.GetSelfAndVisualAncestors().OfType<Control>().Select(c => c.DataContext).OfType<TreeItemViewModel>().FirstOrDefault();
 
+    // The row's expanded state before a double-click, which TreeViewItem toggles on its own.
+    private void OnTreePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.ClickCount == 2 && ItemFrom(e.Source) is { } item)
+        {
+            _pressed = (item, item.IsExpanded);
+        }
+
+        EndSpeedSearch();
+    }
+
+    // DataGrip: a double-click opens tables and views (data), columns (their table), and other objects (DDL);
+    // data sources, databases, schemas, and folders just expand.
     private void OnTreeDoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (ItemFrom(e.Source) is { IsPlaceholder: false } item)
+        if (ViewModel is { } vm && ItemFrom(e.Source) is { IsPlaceholder: false } item && vm.OpenItem(item))
         {
-            Activate(item);
+            if (_pressed is { } pressed && pressed.Item == item)
+            {
+                item.IsExpanded = pressed.Expanded;
+            }
+
+            e.Handled = true;
+        }
+
+        _pressed = null;
+    }
+
+    private void Open(TreeItemViewModel item)
+    {
+        if (ViewModel?.OpenItem(item) != true)
+        {
+            item.IsExpanded = !item.IsExpanded;
         }
     }
 
     private void OnTreeKeyDown(object? sender, KeyEventArgs e)
     {
+        if (_speed.Length > 0 && e.Key is Key.Escape or Key.Back)
+        {
+            if (e.Key == Key.Back && _speed.Length > 1)
+            {
+                SpeedSearch(_speed[..^1]);
+            }
+            else
+            {
+                EndSpeedSearch();
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         if (ViewModel?.SelectedItem is not { } item)
         {
             return;
@@ -392,12 +447,13 @@ public partial class MainWindow : Window, IDialogService
 
         if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None)
         {
-            Activate(item);
+            EndSpeedSearch();
+            Open(item);
             e.Handled = true;
             return;
         }
 
-        foreach (var id in new[] { "tree.refresh", "object.drop", "object.rename", "object.findUsages", "tree.filter", "object.ddl" })
+        foreach (var id in new[] { "object.open", "object.ddl", "object.quickDoc", "object.console", "object.copyReference", "tree.refresh", "object.drop", "object.rename", "object.findUsages", "tree.filter" })
         {
             if (Keymap.Current.Matches(id, e))
             {
@@ -407,15 +463,160 @@ public partial class MainWindow : Window, IDialogService
         }
     }
 
-    private void Activate(TreeItemViewModel item)
+    // Speed search: typing with the tree focused selects the first visible row that matches.
+    private void OnTreeTextInput(object? sender, TextInputEventArgs e)
     {
-        if (RelationKinds.Contains(item.Kind))
+        if (string.IsNullOrEmpty(e.Text) || e.Text.Any(char.IsControl) || (_speed.Length == 0 && string.IsNullOrWhiteSpace(e.Text)))
         {
-            ViewModel?.OpenData(item);
+            return;
         }
-        else if (item.Children.Count > 0)
+
+        SpeedSearch(_speed + e.Text);
+        e.Handled = true;
+    }
+
+    private void SpeedSearch(string text)
+    {
+        if (ViewModel is not { } vm)
         {
-            item.IsExpanded = !item.IsExpanded;
+            return;
+        }
+
+        _speed = text;
+        var rows = VisibleRows(vm.Roots).ToList();
+        var match = rows.FirstOrDefault(r => r.Label.StartsWith(text, StringComparison.OrdinalIgnoreCase))
+            ?? rows.FirstOrDefault(r => r.Label.Contains(text, StringComparison.OrdinalIgnoreCase))
+            ?? rows.FirstOrDefault(r => Bengine.Introspection.Sql.SqlCompletion.MatchScore(r.Label, text) > 0);
+        var box = this.FindControl<Border>("SpeedSearchBox")!;
+        var label = this.FindControl<TextBlock>("SpeedSearchText")!;
+        label.Text = "⌕ " + text + (match is null ? "   no match" : string.Empty);
+        if (match is null)
+        {
+            label.Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#ff8f8f"));
+        }
+        else
+        {
+            label.ClearValue(TextBlock.ForegroundProperty);
+        }
+        box.IsVisible = true;
+        if (match is not null)
+        {
+            vm.SelectedItem = match;
+            _tree.ScrollIntoView(match);
+            (_tree.TreeContainerFromItem(match) as Control)?.Focus();
+        }
+
+        _speedTimer.Stop();
+        _speedTimer.Start();
+    }
+
+    private void EndSpeedSearch()
+    {
+        _speedTimer.Stop();
+        _speed = string.Empty;
+        if (this.FindControl<Border>("SpeedSearchBox") is { } box)
+        {
+            box.IsVisible = false;
+        }
+    }
+
+    private static IEnumerable<TreeItemViewModel> VisibleRows(IEnumerable<TreeItemViewModel> rows)
+    {
+        foreach (var row in rows.Where(r => r.IsVisible && !r.IsPlaceholder))
+        {
+            yield return row;
+            if (row.IsExpanded)
+            {
+                foreach (var child in VisibleRows(row.Children))
+                {
+                    yield return child;
+                }
+            }
+        }
+    }
+
+    private void OnCollapseAll(object? sender, RoutedEventArgs e)
+    {
+        static void Collapse(IEnumerable<TreeItemViewModel> rows)
+        {
+            foreach (var row in rows)
+            {
+                Collapse(row.Children);
+                if (row.Kind != "ServerGroup")
+                {
+                    row.IsExpanded = false;
+                }
+            }
+        }
+
+        if (ViewModel is { } vm)
+        {
+            Collapse(vm.Roots);
+        }
+    }
+
+    /// <summary>Shows an object's Quick Documentation (Ctrl+Q) in a popup beside its row.</summary>
+    /// <param name="item">The row.</param>
+    /// <returns>A task that completes when the documentation is loaded.</returns>
+    public async Task ShowQuickDocAsync(TreeItemViewModel item)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        var doc = vm.QuickDoc;
+        var rows = new ItemsControl
+        {
+            ItemsSource = doc.Rows,
+            ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<PropertyRow>((row, _) => row is null ? new TextBlock() : new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("170,*"),
+                Margin = new Thickness(0, 1),
+                Children =
+                {
+                    new TextBlock { Text = row.Name, Classes = { "dim" }, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) },
+                    new TextBlock { [Grid.ColumnProperty] = 1, Text = row.Value ?? string.Empty, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                },
+            }),
+        };
+        var message = new TextBlock { Classes = { "dim" }, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Text = "Loading…" };
+        var ddl = new SqlEditor { IsReadOnly = true, HighlightStatement = false, ShowLineNumbers = false, WordWrap = true, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Height = 170, IsVisible = false };
+        var header = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Thickness(0, 0, 0, 8),
+            Children =
+            {
+                new IconView { Kind = item.IconKind, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center },
+                new TextBlock { Text = string.Join("  ›  ", item.Breadcrumb()), FontWeight = Avalonia.Media.FontWeight.SemiBold, TextWrapping = Avalonia.Media.TextWrapping.Wrap, MaxWidth = 500 },
+            },
+        };
+        var body = new StackPanel
+        {
+            Width = 560,
+            Spacing = 8,
+            Children =
+            {
+                header,
+                message,
+                new ScrollViewer { MaxHeight = 240, Content = rows },
+                new Border { BorderBrush = (Avalonia.Media.IBrush?)Application.Current?.FindResource("Line"), BorderThickness = new Thickness(1), Child = ddl, IsVisible = false },
+            },
+        };
+        var flyout = new Flyout { Content = body, Placement = PlacementMode.RightEdgeAlignedTop, ShowMode = FlyoutShowMode.Standard };
+        flyout.FlyoutPresenterClasses.Add("quickdoc");
+        flyout.ShowAt((_tree.TreeContainerFromItem(item) as Control) ?? _tree);
+        await vm.LoadQuickDocAsync(item);
+        message.Text = doc.Message;
+        message.IsVisible = doc.Message is not null;
+        if (doc.Sql is { } sql)
+        {
+            ddl.Provider = doc.Provider;
+            ddl.Text = sql;
+            ddl.IsVisible = true;
+            ((Border)body.Children[^1]).IsVisible = true;
         }
     }
 
@@ -435,147 +636,196 @@ public partial class MainWindow : Window, IDialogService
     private static List<Control> BuildMenu(ExplorerViewModel vm, TreeItemViewModel item, MainWindow window)
     {
         var items = new List<Control>();
+        var keys = Keymap.Current;
         var readOnly = item.Server?.ReadOnly == true;
-        void Add(string header, Action action, string? gesture = null, bool enabled = true)
+        var kind = item.Kind;
+        var r = item.Node?.Ref;
+        var relation = RelationKinds.Contains(kind);
+        MenuItem Item(string header, Action action, string? actionId = null, bool enabled = true, string? gesture = null)
         {
             var menuItem = Menu(header, action);
             menuItem.IsEnabled = enabled;
-            if (gesture is not null)
-            {
-                menuItem.InputGesture = KeyGesture.Parse(gesture);
-            }
-
-            items.Add(menuItem);
+            menuItem.InputGesture = actionId is not null ? keys.MenuGesture(actionId) : gesture is null ? null : KeyGesture.Parse(gesture);
+            return menuItem;
         }
 
-        void AddObjectActions()
+        void Add(string header, Action action, string? actionId = null, bool enabled = true, string? gesture = null) =>
+            items.Add(Item(header, action, actionId, enabled, gesture));
+        void Separate()
         {
-            if (ExplorerViewModel.CanFindUsages(item))
+            if (items.Count > 0 && items[^1] is not Separator)
             {
-                Add("Find Usages", () => _ = vm.ShowUsagesAsync(item), "Alt+F7");
-            }
-
-            if (ExplorerViewModel.CanRename(item))
-            {
-                Add("Rename…", () => _ = vm.RenameAsync(item), "F2", !readOnly);
-            }
-
-            if (ExplorerViewModel.CanDrop(item))
-            {
-                Add("Drop…", () => _ = vm.DropAsync(item), "Delete", !readOnly);
-                if (item.Server?.Provider == Bengine.Enums.DatabaseProvider.PostgreSql && item.Kind is not ("Database" or "Column"))
-                {
-                    Add("Drop Cascade…", () => _ = vm.DropAsync(item, cascade: true), enabled: !readOnly);
-                }
+                items.Add(new Separator());
             }
         }
 
-        switch (item.Kind)
+        void Sub(string header, IEnumerable<Control> children)
         {
-            case "ServerGroup":
-                Add("Register Server…", () => vm.RegisterServerCommand.Execute(null));
-                Add("Import Servers (pgAdmin / DataGrip)…", () => vm.ImportPgAdminCommand.Execute(null));
-                Add("Refresh", vm.ReloadServers);
-                break;
-            case "Server":
+            var list = children.ToList();
+            if (list.Count > 0)
+            {
+                items.Add(new MenuItem { Header = header, ItemsSource = list });
+            }
+        }
+
+        if (kind == "ServerGroup")
+        {
+            Add("New Data Source…", () => vm.RegisterServerCommand.Execute(null));
+            Add("Import Data Sources (pgAdmin / DataGrip)…", () => vm.ImportPgAdminCommand.Execute(null));
+            Add("Refresh", vm.ReloadServers);
+            return items;
+        }
+
+        var server = item.Server!;
+        if (kind == "Server")
+        {
+            Sub("New", [Item("Query Console", () => _ = vm.OpenQueryAsync(server, null), "query.new"), Item("Data Source…", () => vm.RegisterServerCommand.Execute(null))]);
+            Add(item.IsConnected ? "Disconnect" : "Connect", () =>
+            {
                 if (item.IsConnected)
                 {
-                    Add("Disconnect Server", () => vm.Disconnect(item));
+                    vm.Disconnect(item);
                 }
                 else
                 {
-                    Add("Connect Server", () => item.IsExpanded = true);
+                    item.IsExpanded = true;
                 }
-
-                Add("Query Tool", () => _ = vm.OpenQueryAsync(item.Server!, null), "Ctrl+Shift+Q");
-                if (Bengine.Introspection.Activity.ServerActivity.IsSupported(item.Server!.Provider))
-                {
-                    Add("Server Activity", () => vm.OpenActivity(item.Server!));
-                }
-
-                Add("Refresh", () => _ = item.RefreshAsync(), "F5");
-                items.Add(new Separator());
-                Add("Properties…", () => _ = vm.EditServerAsync(item));
-                Add("Remove Server", () => _ = vm.RemoveServerAsync(item));
-                break;
-            case "Database":
-                Add("Query Tool", () => _ = vm.OpenQueryAsync(item.Server!, item.Node!.Ref.Database), "Ctrl+Shift+Q");
-                Add("New Table…", () => _ = vm.NewTableAsync(item), enabled: !readOnly);
-                Add("Import Data from File…", () => _ = vm.ImportDataAsync(item), enabled: !readOnly);
-                Add("Compare With…", () => _ = vm.OpenCompareAsync(item));
-                Add("ER Diagram", () => vm.OpenDiagram(item), "Ctrl+Alt+Shift+U");
-                Add("Refresh", () => _ = item.RefreshAsync(), "F5");
-                items.Add(new Separator());
-                Add("Dump / Backup…", () => _ = vm.BackupAsync(item, restore: false));
-                Add("Restore / Run SQL Script…", () => _ = vm.BackupAsync(item, restore: true), enabled: !readOnly);
-                items.Add(new Separator());
-                AddObjectActions();
-                break;
-            case var kind when RelationKinds.Contains(kind):
+            });
+            Add("Jump to Query Console", () => _ = vm.OpenQueryAsync(server, null), "object.console");
+            if (Bengine.Introspection.Activity.ServerActivity.IsSupported(server.Provider))
             {
-                var r = item.Node!.Ref;
-                Add("View/Edit Data", () => vm.OpenData(item), "Enter");
-                Add("Query Tool", () => _ = vm.OpenQueryAsync(item.Server!, r.Database, SelectTop(item.Server!.Provider, r.Schema, r.Name!)));
-                items.Add(new MenuItem
+                Add("Server Activity", () => vm.OpenActivity(server));
+            }
+
+            Add("Refresh", () => _ = item.RefreshAsync(), "tree.refresh");
+            Separate();
+            Add("Data Source Properties…", () => _ = vm.EditServerAsync(item));
+            Add("Remove Data Source…", () => _ = vm.RemoveServerAsync(item));
+            return items;
+        }
+
+        if (kind == "Folder")
+        {
+            Add("Refresh", () => _ = item.RefreshAsync(), "tree.refresh");
+            return items;
+        }
+
+        // Open, navigate, document.
+        if (relation)
+        {
+            Add("Edit Data", () => vm.OpenData(item), "object.open");
+        }
+        else if (kind == "Column")
+        {
+            Add("Edit Table Data", () => vm.OpenItem(item), "object.open");
+        }
+
+        if (!item.IsFolder && kind is not ("Database" or "Schema" or "Catalog"))
+        {
+            Add("Go to DDL", () => _ = vm.OpenDdlAsync(item), "object.ddl");
+        }
+
+        if (!item.IsFolder)
+        {
+            Add("Quick Documentation", () => _ = window.ShowQuickDocAsync(item), "object.quickDoc");
+        }
+
+        if (ExplorerViewModel.CanFindUsages(item))
+        {
+            Add("Find Usages", () => _ = vm.ShowUsagesAsync(item), "object.findUsages");
+        }
+
+        // Create and change.
+        Separate();
+        var news = new List<Control>();
+        if (kind is "Database" or "Schema" or "TablesFolder")
+        {
+            news.Add(Item("Table…", () => _ = vm.NewTableAsync(item), enabled: !readOnly));
+        }
+
+        news.Add(Item("Query Console", () => _ = vm.OpenQueryAsync(server, r?.Database), "query.new"));
+        Sub("New", news);
+        if (kind == "Table")
+        {
+            Add("Modify Table…", () => _ = vm.ModifyTableAsync(item), gesture: "Ctrl+F6", enabled: !readOnly);
+        }
+
+        if (ExplorerViewModel.CanRename(item))
+        {
+            Add("Rename…", () => _ = vm.RenameAsync(item), "object.rename", !readOnly);
+        }
+
+        if (ExplorerViewModel.CanDrop(item))
+        {
+            Add("Drop…", () => _ = vm.DropAsync(item), "object.drop", !readOnly);
+            if (server.Provider == Bengine.Enums.DatabaseProvider.PostgreSql && kind is not ("Database" or "Column"))
+            {
+                Add("Drop Cascade…", () => _ = vm.DropAsync(item, cascade: true), enabled: !readOnly);
+            }
+        }
+
+        if (kind == "Table")
+        {
+            Add("Truncate…", () => _ = vm.TruncateAsync(item), enabled: !readOnly);
+        }
+
+        // SQL and consoles.
+        Separate();
+        if (relation)
+        {
+            Sub("SQL Scripts",
+            [
+                Item("SELECT", () => _ = vm.GenerateSqlAsync(item, "select")),
+                Item("INSERT", () => _ = vm.GenerateSqlAsync(item, "insert")),
+                Item("UPDATE", () => _ = vm.GenerateSqlAsync(item, "update")),
+                Item("DELETE", () => _ = vm.GenerateSqlAsync(item, "delete")),
+                Item("DDL to Console", () => _ = vm.GenerateSqlAsync(item, "ddl")),
+                Item("Copy DDL", async () =>
                 {
-                    Header = "SQL Generator",
-                    InputGesture = KeyGesture.Parse("Ctrl+Alt+G"),
-                    ItemsSource = new List<Control>
-                    {
-                        Menu("SELECT", () => _ = vm.GenerateSqlAsync(item, "select")),
-                        Menu("INSERT", () => _ = vm.GenerateSqlAsync(item, "insert")),
-                        Menu("UPDATE", () => _ = vm.GenerateSqlAsync(item, "update")),
-                        Menu("DELETE", () => _ = vm.GenerateSqlAsync(item, "delete")),
-                        Menu("DDL", () => _ = vm.GenerateSqlAsync(item, "ddl")),
-                    },
-                });
-                Add("Copy DDL", async () =>
-                {
-                    var props = await ObjectExplorer.GetPropertiesAsync(item.Server!, vm.PasswordFor(item.Server!), r);
+                    var props = await ObjectExplorer.GetPropertiesAsync(server, vm.PasswordFor(server), r!);
                     if (props.Sql is { } sql)
                     {
                         await window.SetClipboardAsync(sql);
                     }
-                });
-                Add("Refresh", () => _ = item.RefreshAsync(), "F5");
-                items.Add(new Separator());
-                Add("Compare Data With…", () => _ = vm.OpenDataCompareAsync(item));
-                if (kind == "Table")
-                {
-                    Add("Modify Table…", () => _ = vm.ModifyTableAsync(item), "Ctrl+F6");
-                    Add("Import Data from File…", () => _ = vm.ImportDataAsync(item), enabled: !readOnly);
-                    Add("Truncate…", () => _ = vm.TruncateAsync(item), enabled: !readOnly);
-                }
-
-                AddObjectActions();
-                items.Add(new Separator());
-                Add("Copy Name", () => _ = window.SetClipboardAsync(r.Name ?? item.Label));
-                break;
-            }
-
-            default:
-                if (item.Kind is "TablesFolder" or "Schema")
-                {
-                    Add("New Table…", () => _ = vm.NewTableAsync(item), enabled: !readOnly);
-                    Add("Import Data from File…", () => _ = vm.ImportDataAsync(item), enabled: !readOnly);
-                }
-
-                if (item.Kind == "Schema")
-                {
-                    Add("Compare With…", () => _ = vm.OpenCompareAsync(item));
-                    Add("ER Diagram", () => vm.OpenDiagram(item), "Ctrl+Alt+Shift+U");
-                }
-
-                Add("Refresh", () => _ = item.RefreshAsync(), "F5");
-                AddObjectActions();
-                if (item.Node?.Ref.Name is { } name)
-                {
-                    Add("Copy Name", () => _ = window.SetClipboardAsync(name));
-                }
-
-                break;
+                }),
+            ]);
         }
 
+        Add("Jump to Query Console", () => _ = vm.OpenQueryAsync(server, r?.Database, relation ? SelectTop(server.Provider, r!.Schema, r.Name!) : null), "object.console");
+
+        // Data and tools.
+        var tools = new List<Control>();
+        if (kind is "Database" or "Schema" or "TablesFolder" or "Table")
+        {
+            tools.Add(Item("Import Data from File…", () => _ = vm.ImportDataAsync(item), enabled: !readOnly));
+        }
+
+        if (kind == "Database")
+        {
+            tools.Add(Item("Dump / Backup…", () => _ = vm.BackupAsync(item, restore: false)));
+            tools.Add(Item("Restore / Run SQL Script…", () => _ = vm.BackupAsync(item, restore: true), enabled: !readOnly));
+        }
+
+        if (kind is "Database" or "Schema")
+        {
+            tools.Add(Item("Compare Schemas With…", () => _ = vm.OpenCompareAsync(item)));
+            tools.Add(Item("Show Diagram", () => vm.OpenDiagram(item), gesture: "Ctrl+Alt+Shift+U"));
+        }
+
+        if (relation)
+        {
+            tools.Add(Item("Compare Data With…", () => _ = vm.OpenDataCompareAsync(item)));
+        }
+
+        if (tools.Count > 0)
+        {
+            Separate();
+            items.AddRange(tools);
+        }
+
+        Separate();
+        Add("Copy Reference", () => _ = window.SetClipboardAsync(ExplorerViewModel.ReferenceOf(item)), "object.copyReference");
+        Add("Refresh", () => _ = item.RefreshAsync(), "tree.refresh");
         return items;
     }
 

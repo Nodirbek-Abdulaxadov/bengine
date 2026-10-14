@@ -141,6 +141,13 @@ PostgreSQL coerces them to the column's type (`uuid`, `timestamp`, `bigint`, …
 Everything in the explorer above, plus the tools of a database IDE, for
 PostgreSQL, MySQL/MariaDB, SQL Server, and SQLite:
 
+- **Database Explorer** — a DataGrip-style tree: data sources at the root,
+  databases, schemas, and columns without intermediate folders, object kinds
+  as folders with counts (`tables 12`, `routines`, `keys`, `foreign keys`, …),
+  and server- and database-wide objects tucked away. Double-click (or F4)
+  opens a table's data, a column's table, or another object's DDL; Ctrl+B
+  goes to DDL, Ctrl+Q shows quick documentation, Ctrl+Alt+Shift+C copies the
+  qualified name, and typing in the tree jumps to the matching row.
 - **SQL editor** — completion of tables, columns, and foreign-key joins; the
   statement under the caret (Ctrl+Enter) or the script (Ctrl+Shift+Enter);
   cancel; parameters (`:name`, `?`); reformat; live templates; on-the-fly

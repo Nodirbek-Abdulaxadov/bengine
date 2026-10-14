@@ -34,6 +34,12 @@
       <Setter Property="MinHeight" Value="24" />
       <Setter Property="Padding" Value="0" />
     </Style>
+    <!-- Quick Documentation (Ctrl+Q): wider than Fluent's 456px flyout limit, no horizontal scrolling. -->
+    <Style Selector="FlyoutPresenter.quickdoc">
+      <Setter Property="MaxWidth" Value="640" />
+      <Setter Property="MaxHeight" Value="620" />
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+    </Style>
     <Style Selector="TabControl.side > TabItem">
       <Setter Property="MinHeight" Value="30" />
       <Setter Property="Padding" Value="12,0" />
@@ -60,18 +66,19 @@
       <!-- Object Explorer -->
       <TabItem Header="Database">
       <DockPanel Background="{StaticResource Panel}">
-        <Border DockPanel.Dock="Top" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,0,0,1" Padding="12,6,6,6">
+        <Border DockPanel.Dock="Top" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,0,0,1" Padding="6">
           <DockPanel>
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2">
-              <Button Classes="tool" Content="＋" ToolTip.Tip="Register Server" Command="{Binding RegisterServerCommand}" />
+            <StackPanel Orientation="Horizontal" Spacing="2">
+              <Button Classes="tool" Content="＋" ToolTip.Tip="New data source" Command="{Binding RegisterServerCommand}" />
               <Button Classes="tool" Content="⇩" ToolTip.Tip="Import from pgAdmin / DataGrip" Command="{Binding ImportPgAdminCommand}" />
-              <Button Classes="tool" Content="⟳" ToolTip.Tip="Refresh (F5)" Command="{Binding RefreshCommand}" />
-              <Button Classes="tool" Content="⌨" ToolTip.Tip="Query Tool (Ctrl+Shift+Q)" Command="{Binding QueryToolCommand}" />
+              <Button Classes="tool" Content="⟳" ToolTip.Tip="Refresh (Ctrl+F5)" Command="{Binding RefreshCommand}" />
+              <Button Classes="tool" Content="⌨" ToolTip.Tip="Query console (Ctrl+Shift+Q)" Command="{Binding QueryToolCommand}" />
+              <Button Classes="tool" Content="⊟" ToolTip.Tip="Collapse all" Click="OnCollapseAll" />
               <Button Classes="tool" Content="⟲" ToolTip.Tip="Query history (Ctrl+Alt+E)" Command="{Binding ShowHistoryCommand}" />
               <Button Classes="tool" Content="⌕" ToolTip.Tip="Go to object (Ctrl+N)" Click="OnGoTo" />
               <Button Classes="tool" Content="⇄" ToolTip.Tip="Compare schemas" Command="{Binding CompareCommand}" />
             </StackPanel>
-            <TextBlock Text="Object Explorer" FontWeight="SemiBold" VerticalAlignment="Center" />
+
           </DockPanel>
         </Border>
 
@@ -96,7 +103,7 @@
                              Classes.dim="{Binding IsPlaceholder}"
                              FontStyle="{Binding IsPlaceholder, Converter={x:Static c:Converters.ItalicIfTrue}}"
                              Foreground="{Binding IsError, Converter={x:Static c:Converters.ErrorBrush}}" />
-                  <TextBlock Text="{Binding CountText}" Classes="dim" VerticalAlignment="Center" IsVisible="{Binding CountText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  <TextBlock Text="{Binding CountText}" Classes="faint" FontSize="12" VerticalAlignment="Center" IsVisible="{Binding CountText, Converter={x:Static ObjectConverters.IsNotNull}}" />
                   <TextBlock Text="{Binding Detail}" Classes="faint" FontSize="12" VerticalAlignment="Center" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}" />
                   <TextBlock Text="🔒" FontSize="10" VerticalAlignment="Center" ToolTip.Tip="Read-only" IsVisible="{Binding IsReadOnlyServer}" />
                   <ProgressBar IsIndeterminate="True" Width="40" Height="3" MinWidth="0" VerticalAlignment="Center" IsVisible="{Binding IsLoading}" />
@@ -105,9 +112,15 @@
             </TreeView.ItemTemplate>
           </TreeView>
 
+          <!-- Speed search: typing in the tree jumps to the first matching row. -->
+          <Border x:Name="SpeedSearchBox" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="8,2" Padding="8,3" CornerRadius="3"
+                  Background="#25303f" BorderBrush="#3d4b5f" BorderThickness="1" IsVisible="False">
+            <TextBlock x:Name="SpeedSearchText" Classes="mono" FontSize="12" />
+          </Border>
+
           <StackPanel Spacing="10" Margin="18" IsVisible="{Binding !HasServers}">
-            <TextBlock Classes="dim" TextWrapping="Wrap" Text="No servers registered yet." />
-            <Button Classes="primary" Content="Register Server" Command="{Binding RegisterServerCommand}" />
+            <TextBlock Classes="dim" TextWrapping="Wrap" Text="No data sources yet." />
+            <Button Classes="primary" Content="New Data Source" Command="{Binding RegisterServerCommand}" />
             <Button Classes="ghost" Content="Import from pgAdmin / DataGrip" Command="{Binding ImportPgAdminCommand}" />
           </StackPanel>
         </Panel>
@@ -147,8 +160,29 @@
 
       <GridSplitter Grid.Column="1" Background="{StaticResource LineSoft}" ResizeDirection="Columns" />
 
-      <!-- Workspace -->
-      <TabControl Grid.Column="2" Classes="workspace" ItemsSource="{Binding Tabs}" SelectedItem="{Binding ActiveTab}" Padding="0" Background="{StaticResource Bg}">
+      <!-- Workspace: editor tabs, or hints when none is open -->
+      <StackPanel Grid.Column="2" Spacing="12" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding !HasTabs}">
+        <TextBlock Text="Double-click a table to open its data" Classes="dim" FontSize="15" HorizontalAlignment="Center" />
+        <Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" HorizontalAlignment="Center">
+          <Grid.Styles>
+            <Style Selector="TextBlock"><Setter Property="Margin" Value="8,3" /></Style>
+          </Grid.Styles>
+          <TextBlock Grid.Row="0" Text="Query console" Classes="dim" HorizontalAlignment="Right" />
+          <TextBlock Grid.Row="0" Grid.Column="1" Text="Ctrl+Shift+Q" Classes="mono" Foreground="#82aaff" />
+          <TextBlock Grid.Row="1" Text="Go to object" Classes="dim" HorizontalAlignment="Right" />
+          <TextBlock Grid.Row="1" Grid.Column="1" Text="Ctrl+N" Classes="mono" Foreground="#82aaff" />
+          <TextBlock Grid.Row="2" Text="Find action" Classes="dim" HorizontalAlignment="Right" />
+          <TextBlock Grid.Row="2" Grid.Column="1" Text="Ctrl+Shift+A" Classes="mono" Foreground="#82aaff" />
+          <TextBlock Grid.Row="3" Text="Quick documentation" Classes="dim" HorizontalAlignment="Right" />
+          <TextBlock Grid.Row="3" Grid.Column="1" Text="Ctrl+Q" Classes="mono" Foreground="#82aaff" />
+          <TextBlock Grid.Row="4" Text="Go to DDL" Classes="dim" HorizontalAlignment="Right" />
+          <TextBlock Grid.Row="4" Grid.Column="1" Text="Ctrl+B" Classes="mono" Foreground="#82aaff" />
+          <TextBlock Grid.Row="5" Text="Recent queries" Classes="dim" HorizontalAlignment="Right" />
+          <TextBlock Grid.Row="5" Grid.Column="1" Text="Ctrl+Alt+E" Classes="mono" Foreground="#82aaff" />
+        </Grid>
+      </StackPanel>
+      <TabControl Grid.Column="2" Classes="workspace" ItemsSource="{Binding Tabs}" SelectedItem="{Binding ActiveTab}" Padding="0" Background="{StaticResource Bg}"
+                  IsVisible="{Binding HasTabs}">
         <TabControl.ItemTemplate>
           <DataTemplate DataType="vm:DocumentViewModel">
             <StackPanel Orientation="Horizontal" Spacing="7" ToolTip.Tip="{Binding ToolTip}">

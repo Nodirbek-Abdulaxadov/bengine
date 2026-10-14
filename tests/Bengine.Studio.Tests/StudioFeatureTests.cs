@@ -1,6 +1,7 @@
 namespace Bengine.Studio.Tests;
 
 using System.Diagnostics;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
@@ -445,11 +446,9 @@ public sealed class StudioFeatureTests : IDisposable
         }
 
         var (window, vm) = Open(readOnly: false);
-        var databases = vm.ServerItems.First();
-        await databases.EnsureLoadedAsync();
-        var folder = databases.Children.First(c => c.Label == "Databases");
-        await folder.EnsureLoadedAsync();
-        var diagram = vm.OpenDiagram(folder.Children.First(c => c.Label == "main"))!;
+        var source = vm.ServerItems.First();
+        await source.EnsureLoadedAsync();
+        var diagram = vm.OpenDiagram(source.Children.First(c => c.Label == "main"))!;
         await Until(() => !diagram.IsBusy && diagram.Relations.Count > 0);
         Assert.Equal(7, diagram.Relations.Count);
         Assert.Equal(7, diagram.Keys.Count);
@@ -584,11 +583,9 @@ public sealed class StudioFeatureTests : IDisposable
     public async Task Dumps_and_restores_through_the_backup_dialog_model()
     {
         var (window, vm) = Open(readOnly: false);
-        var databases = vm.ServerItems.First();
-        await databases.EnsureLoadedAsync();
-        var main = databases.Children.First(c => c.Label == "Databases");
-        await main.EnsureLoadedAsync();
-        var database = main.Children.First(c => c.Label == "main");
+        var source = vm.ServerItems.First();
+        await source.EnsureLoadedAsync();
+        var database = source.Children.First(c => c.Label == "main");
         var dump = Path.Combine(_dir, "dump.sql");
         _dialogs.Backup = async backup =>
         {
@@ -608,8 +605,7 @@ public sealed class StudioFeatureTests : IDisposable
         vm.ReloadServers();
         var copyServer = vm.ServerItems.First(s => s.Server!.Name == "copy");
         await copyServer.EnsureLoadedAsync();
-        var copyDatabases = copyServer.Children.First(c => c.Label == "Databases");
-        await copyDatabases.EnsureLoadedAsync();
+
         _dialogs.Backup = async backup =>
         {
             backup.Method = backup.Methods.Single(m => m.Method == BackupMethod.SqlScript);
@@ -619,7 +615,7 @@ public sealed class StudioFeatureTests : IDisposable
             Assert.False(backup.IsError, backup.Status);
             Assert.Equal(1, backup.Progress);
         };
-        await vm.BackupAsync(copyDatabases.Children.First(c => c.Label == "main"), restore: true);
+        await vm.BackupAsync(copyServer.Children.First(c => c.Label == "main"), restore: true);
         await using var session = await vm.OpenSessionAsync(copyServer.Server!, "main");
         Assert.Equal(3L, (await session.Query.ExecuteAsync("SELECT COUNT(*) FROM orders")).Rows[0][0]);
         window.Close();
@@ -654,6 +650,70 @@ public sealed class StudioFeatureTests : IDisposable
 
         await compare.ApplyAsync();
         Assert.True(compare.Result!.Identical, compare.Status);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task Explores_the_tree_the_datagrip_way()
+    {
+        var (window, vm) = Open(readOnly: false);
+
+        // Data sources at the root; databases, schemas, and columns without their pgAdmin folders.
+        var source = Assert.Single(vm.Roots);
+        Assert.Equal("Server", source.Kind);
+        var tables = await ExpandToTablesAsync(vm);
+        Assert.Equal("tables", tables.Label);
+        Assert.Equal("3", tables.CountText);
+        Assert.Equal("Folder", tables.IconKind);
+        Assert.DoesNotContain(source.Children.Single(c => c.Label == "main").Children, c => c.Label is "views" or "Views");
+
+        var orders = tables.Children.Single(c => c.Label == "orders");
+        await orders.EnsureLoadedAsync();
+        Assert.Equal(["id", "user_id", "total", "keys", "foreign keys"], orders.Children.Select(c => c.Label));
+        Assert.Equal("Column", orders.Children[0].Kind);
+        var foreignKeys = orders.Children.Single(c => c.Label == "foreign keys");
+        await foreignKeys.EnsureLoadedAsync();
+        Assert.Equal("ForeignKey", Assert.Single(foreignKeys.Children).Kind);
+
+        // A real double-click on a table opens its data and leaves the row as it was.
+        Dispatcher.UIThread.RunJobs();
+        var tree = window.FindControl<TreeView>("Tree")!;
+        tree.ScrollIntoView(orders);
+        Dispatcher.UIThread.RunJobs();
+        orders.IsExpanded = false;
+        Dispatcher.UIThread.RunJobs();
+        var row = (TreeViewItem)tree.TreeContainerFromItem(orders)!;
+        var header = row.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "orders");
+        var point = header.TranslatePoint(new Avalonia.Point(5, 5), window)!.Value;
+        window.MouseDown(point, Avalonia.Input.MouseButton.Left);
+        window.MouseUp(point, Avalonia.Input.MouseButton.Left);
+        window.MouseDown(point, Avalonia.Input.MouseButton.Left);
+        window.MouseUp(point, Avalonia.Input.MouseButton.Left);
+        await Until(() => vm.Tabs.OfType<DataDocumentViewModel>().Any());
+        Assert.False(orders.IsExpanded);
+        Assert.Equal("orders", vm.Tabs.OfType<DataDocumentViewModel>().Single().Table.Name);
+
+        // A column opens its table; other objects open as DDL; Copy Reference qualifies the name.
+        Assert.True(vm.OpenItem(orders.Children.Single(c => c.Label == "total")));
+        Assert.Single(vm.Tabs.OfType<DataDocumentViewModel>());
+        Assert.False(vm.OpenItem(source));
+        var ddl = await vm.OpenDdlAsync(orders);
+        Assert.Contains("CREATE TABLE", ddl!.Sql!, StringComparison.OrdinalIgnoreCase);
+        Assert.Same(ddl, await vm.OpenDdlAsync(orders));
+        Assert.Equal("orders.total", ExplorerViewModel.ReferenceOf(orders.Children.Single(c => c.Label == "total")));
+
+        // Speed search: typing in the tree selects the first matching row.
+        vm.SelectedItem = tables;
+        (tree.TreeContainerFromItem(tables) as Control)?.Focus();
+        window.KeyTextInput("scr");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("scratch", vm.SelectedItem?.Label);
+        Shot(window, "feat-22-datagrip-tree");
+
+        // Ctrl+Q shows the quick documentation.
+        await window.ShowQuickDocAsync(orders);
+        Assert.Contains(vm.QuickDoc.Rows, r => r.Value == "orders");
+        Shot(window, "feat-23-quick-doc");
         window.Close();
     }
 
@@ -736,7 +796,7 @@ public sealed class StudioFeatureTests : IDisposable
     private static async Task<TreeItemViewModel> ExpandToTablesAsync(ExplorerViewModel vm)
     {
         var item = vm.ServerItems.First();
-        foreach (var label in new[] { "Databases", "main", "Tables" })
+        foreach (var label in new[] { "main", "tables" })
         {
             await item.EnsureLoadedAsync();
             item = item.Children.First(c => c.Label == label);

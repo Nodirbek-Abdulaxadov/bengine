@@ -66,18 +66,8 @@ public sealed partial class ExplorerViewModel : ObservableObject
         Files = new Bengine.Introspection.Projects.SqlFiles(configDirectory);
         FilesPanel = new FilesViewModel(this, Settings.ProjectFolder);
         Bengine.Studio.Controls.Keymap.Current = new Bengine.Studio.Controls.Keymap(Settings.Shortcuts);
-        PropertiesTab = new PropertiesDocumentViewModel();
-        SqlTab = new SqlDocumentViewModel();
-        SqlTab.OpenInQueryTool = sql =>
-        {
-            if (SelectedItem is { Server: { } server } item)
-            {
-                _ = OpenQueryAsync(server, item.Node?.Ref.Database, sql);
-            }
-        };
-        Tabs.Add(PropertiesTab);
-        Tabs.Add(SqlTab);
-        ActiveTab = PropertiesTab;
+        QuickDoc = new PropertiesDocumentViewModel();
+        Tabs.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTabs));
         ReloadServers();
     }
 
@@ -99,14 +89,14 @@ public sealed partial class ExplorerViewModel : ObservableObject
     /// <summary>Gets the server groups at the root of the tree.</summary>
     public ObservableCollection<TreeItemViewModel> Roots { get; } = [];
 
-    /// <summary>Gets the workspace tabs: Properties, SQL, then any open Data/Query tabs.</summary>
+    /// <summary>Gets the workspace tabs (data editors, consoles, DDL, tools), as in DataGrip's editor area.</summary>
     public ObservableCollection<DocumentViewModel> Tabs { get; } = [];
 
-    /// <summary>Gets the Properties tab.</summary>
-    public PropertiesDocumentViewModel PropertiesTab { get; }
+    /// <summary>Gets a value indicating whether any tab is open (the empty workspace shows hints).</summary>
+    public bool HasTabs => Tabs.Count > 0;
 
-    /// <summary>Gets the SQL tab.</summary>
-    public SqlDocumentViewModel SqlTab { get; }
+    /// <summary>Gets the Quick Documentation (Ctrl+Q) of the last object asked: its properties and DDL.</summary>
+    public PropertiesDocumentViewModel QuickDoc { get; }
 
     /// <summary>Gets whether any server is registered.</summary>
     public bool HasServers => Roots.Count > 0;
@@ -115,13 +105,17 @@ public sealed partial class ExplorerViewModel : ObservableObject
     public string StorePath => _store.FilePath;
 
     /// <summary>Gets every server row.</summary>
-    public IEnumerable<TreeItemViewModel> ServerItems => Roots.SelectMany(g => g.Children);
+    public IEnumerable<TreeItemViewModel> ServerItems => Roots.SelectMany(r => r.Kind == "Server" ? [r] : r.Children.AsEnumerable());
 
-    /// <summary>Reloads the server list from the store, rebuilding the tree.</summary>
+    /// <summary>
+    /// Reloads the server list from the store, rebuilding the tree: data sources
+    /// at the root, as in DataGrip, and folders only for named groups.
+    /// </summary>
     public void ReloadServers()
     {
         Roots.Clear();
-        foreach (var group in _store.List().GroupBy(s => s.Group))
+        var groups = _store.List().GroupBy(s => s.Group).ToList();
+        foreach (var group in groups.Where(g => !IsDefaultGroup(g.Key)))
         {
             var row = TreeItemViewModel.ForGroup(this, group.Key, group.Count());
             foreach (var server in group)
@@ -133,8 +127,15 @@ public sealed partial class ExplorerViewModel : ObservableObject
             Roots.Add(row);
         }
 
+        foreach (var server in groups.Where(g => IsDefaultGroup(g.Key)).SelectMany(g => g))
+        {
+            Roots.Add(TreeItemViewModel.ForServer(this, server, null));
+        }
+
         OnPropertyChanged(nameof(HasServers));
     }
+
+    private static bool IsDefaultGroup(string? group) => string.IsNullOrWhiteSpace(group) || group == "Servers";
 
     /// <summary>Gets the password to use for a server: one typed this session, else the saved one.</summary>
     /// <param name="server">The server.</param>
@@ -443,11 +444,10 @@ public sealed partial class ExplorerViewModel : ObservableObject
                 return target;
             }
 
+            var databases = current.Children.Count(x => x.Node?.Ref.Kind == NodeKind.Database);
             current = current.Children.FirstOrDefault(c => c.Node?.Ref is { } r && r.Kind switch
             {
-                NodeKind.DatabasesFolder => true,
-                NodeKind.Database => r.Name == hit.Database || current.Children.Count(x => x.Node?.Ref.Kind == NodeKind.Database) == 1,
-                NodeKind.SchemasFolder => hit.Relation.Schema is not null,
+                NodeKind.Database => r.Name == hit.Database || databases == 1,
                 NodeKind.Schema => r.Name == hit.Relation.Schema,
                 NodeKind.TablesFolder => kind == NodeKind.Table,
                 NodeKind.ViewsFolder => kind == NodeKind.View,
@@ -1025,7 +1025,7 @@ public sealed partial class ExplorerViewModel : ObservableObject
             await CloseTabAsync(tab);
         }
 
-        ActiveTab = PropertiesTab;
+        ActiveTab = Tabs.FirstOrDefault();
         ReloadServers();
     }
 
@@ -1082,11 +1082,13 @@ public sealed partial class ExplorerViewModel : ObservableObject
         Tabs.Remove(doc);
         if (ActiveTab == doc || ActiveTab is null)
         {
-            ActiveTab = Tabs[Math.Clamp(index - 1, 0, Tabs.Count - 1)];
+            ActiveTab = Tabs.Count == 0 ? null : Tabs[Math.Clamp(index - 1, 0, Tabs.Count - 1)];
         }
     }
 
-    partial void OnSelectedItemChanged(TreeItemViewModel? value) => _ = LoadPropertiesAsync(value);
+    // Selecting a row only selects it, as in DataGrip; Ctrl+Q, F4, and Ctrl+B open what it holds.
+    partial void OnSelectedItemChanged(TreeItemViewModel? value) =>
+        Breadcrumb = value is null || value.IsPlaceholder ? string.Empty : string.Join("  ›  ", value.Breadcrumb());
 
     private async Task<bool> RunObjectSqlAsync(TreeItemViewModel item, string title, string sql, string verb, bool refreshParent)
     {
@@ -1150,22 +1152,28 @@ public sealed partial class ExplorerViewModel : ObservableObject
         return databases?.Where(d => d.Ref.Kind == NodeKind.Database && d.HasChildren).Select(d => d.Ref.Name!).ToList() ?? [];
     }
 
-    private async Task LoadPropertiesAsync(TreeItemViewModel? item)
+    /// <summary>Loads an object's Quick Documentation (Ctrl+Q): its properties, or its children's summary, and its DDL.</summary>
+    /// <param name="item">The row.</param>
+    /// <returns>A task that completes when loaded.</returns>
+    public async Task LoadQuickDocAsync(TreeItemViewModel? item)
     {
         var version = ++_selectionVersion;
-        PropertiesTab.Rows.Clear();
-        SqlTab.Sql = null;
+        var doc = QuickDoc;
+        doc.Rows.Clear();
+        doc.Sql = null;
         if (item is not { Server: { } server, Node: { } node } || item.IsPlaceholder)
         {
-            SetBreadcrumb(item?.Label ?? string.Empty, null);
-            PropertiesTab.Message = "Select an object in the Object Explorer.";
-            SqlTab.Message = "Select an object to see its SQL.";
+            doc.Breadcrumb = item?.Label ?? string.Empty;
+            doc.BreadcrumbKind = item?.IconKind;
+            doc.Message = "No documentation for this row.";
             return;
         }
 
-        SetBreadcrumb(string.Join("  ›  ", item.Breadcrumb()), item.Kind);
-        PropertiesTab.IsLoading = true;
-        PropertiesTab.Message = "Loading…";
+        doc.Breadcrumb = string.Join("  ›  ", item.Breadcrumb());
+        doc.BreadcrumbKind = item.Kind;
+        doc.Provider = server.Provider;
+        doc.IsLoading = true;
+        doc.Message = "Loading…";
         try
         {
             var properties = await ObjectExplorer.GetPropertiesAsync(server, PasswordFor(server), node.Ref);
@@ -1175,47 +1183,138 @@ public sealed partial class ExplorerViewModel : ObservableObject
             }
 
             var isGrid = properties.GridColumns.Count > 0;
-            PropertiesTab.FirstHeader = isGrid ? "Name" : "Property";
-            PropertiesTab.SecondHeader = isGrid ? "Details" : "Value";
+            doc.FirstHeader = isGrid ? "Name" : "Property";
+            doc.SecondHeader = isGrid ? "Details" : "Value";
             var rows = isGrid
                 ? properties.GridRows.Select(r => new PropertyRow(r.ElementAtOrDefault(0) ?? string.Empty, r.ElementAtOrDefault(1)))
                 : properties.Properties.Select(p => new PropertyRow(p.Name, p.Value));
             foreach (var row in rows)
             {
-                PropertiesTab.Rows.Add(row);
+                doc.Rows.Add(row);
             }
 
-            PropertiesTab.Message = PropertiesTab.Rows.Count == 0 ? (isGrid ? "No objects." : "No properties.") : null;
-            SqlTab.Sql = properties.Sql;
-            SqlTab.Message = properties.Sql is null ? "No SQL for this object." : null;
-            SqlTab.Provider = server.Provider;
+            doc.Sql = properties.Sql;
+            doc.Message = doc.Rows.Count == 0 && doc.Sql is null ? (isGrid ? "No objects." : "No properties.") : null;
         }
         catch (IntrospectionException ex)
         {
-            if (version != _selectionVersion)
+            if (version == _selectionVersion)
             {
-                return;
+                doc.Message = ObjectExplorer.IsAuthenticationError(ex)
+                    ? "Not connected. Expand the data source to sign in."
+                    : ex.Message;
             }
-
-            PropertiesTab.Message = ObjectExplorer.IsAuthenticationError(ex)
-                ? "Not connected. Expand the server (or right-click → Connect Server) to sign in."
-                : ex.Message;
-            SqlTab.Message = PropertiesTab.Message;
         }
         finally
         {
             if (version == _selectionVersion)
             {
-                PropertiesTab.IsLoading = false;
+                doc.IsLoading = false;
             }
         }
     }
 
-    private void SetBreadcrumb(string text, string? kind)
+    /// <summary>Opens an object's DDL in a tab (Ctrl+B, "Go to DDL"), reusing the tab when it is open.</summary>
+    /// <param name="item">The row.</param>
+    /// <returns>The tab, or <c>null</c> when the object has no DDL.</returns>
+    public async Task<SqlDocumentViewModel?> OpenDdlAsync(TreeItemViewModel item)
     {
-        Breadcrumb = text;
-        PropertiesTab.Breadcrumb = SqlTab.Breadcrumb = text;
-        PropertiesTab.BreadcrumbKind = SqlTab.BreadcrumbKind = kind;
+        if (item is not { Server: { } server, Node: { } node } || item.IsPlaceholder)
+        {
+            return null;
+        }
+
+        var key = $"{server.Id}|{node.Ref.Id}";
+        if (Tabs.OfType<SqlDocumentViewModel>().FirstOrDefault(t => t.Key == key) is { } open)
+        {
+            ActiveTab = open;
+            return open;
+        }
+
+        try
+        {
+            var properties = await ObjectExplorer.GetPropertiesAsync(server, PasswordFor(server), node.Ref);
+            if (properties.Sql is not { } sql)
+            {
+                Status = $"{item.Label} has no DDL.";
+                return null;
+            }
+
+            var doc = new SqlDocumentViewModel($"{item.Label} · DDL", item.Kind, key, server.Color)
+            {
+                Sql = sql,
+                Message = null,
+                Provider = server.Provider,
+                Breadcrumb = string.Join("  ›  ", item.Breadcrumb()),
+                BreadcrumbKind = item.Kind,
+                OpenInQueryTool = text => _ = OpenQueryAsync(server, node.Ref.Database, text),
+            };
+            AddTab(doc);
+            return doc;
+        }
+        catch (IntrospectionException ex)
+        {
+            Status = ex.Message;
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Opens a row the way DataGrip's double-click and F4 do: tables and views
+    /// in the data editor (a column opens its table), other objects as DDL.
+    /// </summary>
+    /// <param name="item">The row.</param>
+    /// <returns><c>true</c> when something opened; <c>false</c> for rows that only expand.</returns>
+    public bool OpenItem(TreeItemViewModel item)
+    {
+        if (item.Server is not { } server || item.Node?.Ref is not { } r || item.IsFolder)
+        {
+            return false;
+        }
+
+        switch (r.Kind)
+        {
+            case NodeKind.Table or NodeKind.View or NodeKind.MaterializedView or NodeKind.ForeignTable:
+                OpenData(item);
+                return true;
+            case NodeKind.Column when r.Relation is { } relation:
+                OpenData(server, r.Database, new TableRef(relation, r.Schema));
+                return true;
+            case NodeKind.Server or NodeKind.Database or NodeKind.Schema or NodeKind.Catalog:
+                return false;
+            default:
+                _ = OpenDdlAsync(item);
+                return true;
+        }
+    }
+
+    /// <summary>Gets the qualified name of an object (Copy Reference).</summary>
+    /// <param name="item">The row.</param>
+    /// <returns>The reference, or the row's label.</returns>
+    public static string ReferenceOf(TreeItemViewModel item)
+    {
+        if (item.Server is not { } server || item.Node?.Ref is not { Name: { } name } r)
+        {
+            return item.Label;
+        }
+
+        var parts = new List<string?>();
+        if (r.Kind is NodeKind.Database)
+        {
+            return SqlKeywords.QuoteIfNeeded(name, server.Provider);
+        }
+
+        if (r.Kind is NodeKind.Column && r.Relation is { } relation)
+        {
+            parts.AddRange([r.Schema, relation, name]);
+        }
+        else
+        {
+            parts.AddRange([r.Kind == NodeKind.Schema ? null : r.Schema, name]);
+        }
+
+        return string.Join('.', parts.Where(p => p is not null && !(server.Provider == Bengine.Enums.DatabaseProvider.MySql && p == r.Database))
+            .Select(p => SqlKeywords.QuoteIfNeeded(p!, server.Provider)));
     }
 
     private async Task<bool> EnsureConnectedAsync(ServerProfile server)
