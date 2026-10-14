@@ -54,6 +54,13 @@ public static class TreeIcons
                 Rect(c, 1, 7, 9, 4, 1, "#8a9bb3");
                 Rect(c, 6, 9, 9, 5, 1, "#b6c3d6");
                 break;
+            case "Package":
+                Rect(c, 2.5, 4, 11, 9.5, 1.5, "#d4a24c");
+                Line(c, "M2.5 7.5 L13.5 7.5 M8 4 L8 13.5", "#8a6420", 1.2);
+                break;
+            case "Synonym":
+                Line(c, "M3 6 L12 6 M9.5 3.5 L12 6 L9.5 8.5 M13 10 L4 10 M6.5 7.5 L4 10 L6.5 12.5", "#7fb4e0", 1.5);
+                break;
             case "Folder":
                 PathFill(c, "M1.5 3.5 L6 3.5 L7.5 5 L14.5 5 L14.5 13 L1.5 13 Z", "#7f8ea3");
                 PathFill(c, "M1.5 6.5 L14.5 6.5 L14.5 13 L1.5 13 Z", "#9aa8bb");
@@ -208,6 +215,7 @@ public static class TreeIcons
         DatabaseProvider.MySql => "#f29111",
         DatabaseProvider.SqlServer => "#e5484d",
         DatabaseProvider.Sqlite => "#4fc1e9",
+        DatabaseProvider.Oracle => "#c74634",
         _ => "#5b9bd5",
     };
 

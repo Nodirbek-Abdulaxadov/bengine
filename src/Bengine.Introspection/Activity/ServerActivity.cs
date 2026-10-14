@@ -99,6 +99,19 @@ public static class ServerActivity
                 OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) t
                 WHERE s.is_user_process = 1
                 """,
+
+            // Oracle: needs SELECT on V$SESSION and V$SQL (SELECT_CATALOG_ROLE); ids are "sid,serial#".
+            DatabaseProvider.Oracle => """
+                SELECT s.sid || ',' || s.serial#, s.username, s.schemaname, s.machine, s.program,
+                       CASE s.status WHEN 'INACTIVE' THEN 'idle' ELSE 'active' END || CASE WHEN s.taddr IS NOT NULL THEN ' in transaction' END,
+                       s.last_call_et,
+                       CASE WHEN s.wait_class <> 'Idle' THEN s.wait_class || ': ' || s.event END,
+                       q.sql_text,
+                       (SELECT b.sid || ',' || b.serial# FROM v$session b WHERE b.sid = s.blocking_session),
+                       CASE WHEN s.sid = SYS_CONTEXT('USERENV', 'SID') THEN 't' ELSE 'f' END
+                FROM v$session s LEFT JOIN v$sql q ON q.sql_id = s.sql_id AND q.child_number = s.sql_child_number
+                WHERE s.type = 'USER'
+                """,
             _ => null,
         };
         if (sql is null)
@@ -188,6 +201,16 @@ public static class ServerActivity
                        l.request_mode, CAST(CASE WHEN l.request_status = 'GRANT' THEN 1 ELSE 0 END AS bit)
                 FROM sys.dm_tran_locks l WHERE l.request_session_id <> @@SPID AND l.resource_type <> 'DATABASE'
                 """,
+            DatabaseProvider.Oracle => """
+                SELECT s.sid || ',' || s.serial#, o.owner || '.' || o.object_name,
+                       DECODE(l.locked_mode, 1, 'NULL', 2, 'ROW SHARE', 3, 'ROW EXCLUSIVE', 4, 'SHARE', 5, 'SHARE ROW EXCLUSIVE', 6, 'EXCLUSIVE', 'NONE'), 't'
+                FROM v$locked_object l JOIN all_objects o ON o.object_id = l.object_id JOIN v$session s ON s.sid = l.session_id
+                WHERE l.session_id <> SYS_CONTEXT('USERENV', 'SID')
+                UNION ALL
+                SELECT s.sid || ',' || s.serial#, o.owner || '.' || o.object_name, 'waiting', 'f'
+                FROM v$session s LEFT JOIN all_objects o ON o.object_id = s.row_wait_obj#
+                WHERE s.blocking_session IS NOT NULL
+                """,
             _ => null,
         };
         if (sql is null)
@@ -221,6 +244,7 @@ public static class ServerActivity
             DatabaseProvider.PostgreSql => $"SELECT pg_cancel_backend({Number(id)})",
             DatabaseProvider.MySql => $"KILL QUERY {Number(id)}",
             DatabaseProvider.SqlServer => $"KILL {Number(id)}",
+            DatabaseProvider.Oracle => $"ALTER SYSTEM CANCEL SQL '{OracleSession(id)}'",
             _ => throw new IntrospectionException("SQLite has no server sessions."),
         }, 1, cancellationToken);
 
@@ -234,8 +258,13 @@ public static class ServerActivity
         {
             DatabaseProvider.PostgreSql => $"SELECT pg_terminate_backend({Number(id)})",
             DatabaseProvider.MySql or DatabaseProvider.SqlServer => $"KILL {Number(id)}",
+            DatabaseProvider.Oracle => $"ALTER SYSTEM KILL SESSION '{OracleSession(id)}' IMMEDIATE",
             _ => throw new IntrospectionException("SQLite has no server sessions."),
         }, 1, cancellationToken);
+
+    // Oracle session ids are "sid,serial#"; both parts are checked as integers.
+    private static string OracleSession(string id) =>
+        id.Split(',') is [var sid, var serial] ? $"{Number(sid.Trim())},{Number(serial.Trim())}" : throw new IntrospectionException($"'{id}' is not an Oracle session id (sid,serial#).");
 
     // Session ids are integers; anything else is refused rather than spliced into SQL.
     private static long Number(string id) =>

@@ -114,6 +114,9 @@ public static class DataImporter
         {
             DatabaseProvider.SqlServer => 2000,
             DatabaseProvider.Sqlite => 999,
+
+            // Oracle parses one INSERT ALL per batch; keep the statement modest.
+            DatabaseProvider.Oracle => 2000,
             _ => 30000,
         };
         var batchRows = Math.Clamp(limit / used.Count, 1, 1000);
@@ -267,6 +270,12 @@ public static class DataImporter
         (DatabaseProvider.SqlServer, "decimal") => "decimal(30,10)",
         (DatabaseProvider.SqlServer, "timestamp") => "datetime2",
         (DatabaseProvider.SqlServer, "text") => length is > 0 and <= 4000 ? "nvarchar(4000)" : "nvarchar(max)",
+        (DatabaseProvider.Oracle, "int" or "bigint") => "NUMBER(19)",
+        (DatabaseProvider.Oracle, "decimal") => "NUMBER",
+        (DatabaseProvider.Oracle, "bool") => "NUMBER(1)",
+        (DatabaseProvider.Oracle, "timestamp") => "TIMESTAMP",
+        (DatabaseProvider.Oracle, "date") => "DATE",
+        (DatabaseProvider.Oracle, "text") => length is > 0 and <= 255 ? "VARCHAR2(255 CHAR)" : length is > 0 and <= 4000 ? "VARCHAR2(4000 CHAR)" : "CLOB",
         _ => type,
     };
 

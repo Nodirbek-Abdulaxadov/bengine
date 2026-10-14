@@ -2,6 +2,7 @@ namespace Bengine.Diff;
 
 using System.Text.RegularExpressions;
 using Bengine.Enums;
+using Bengine.Generators.Migrations;
 using Bengine.Models;
 
 /// <summary>How two schemas are compared.</summary>
@@ -151,7 +152,7 @@ public static partial class SchemaDiffer
         }
 
         // Foreign keys, indexes, checks: matched by name, else by definition.
-        Pair(source.ForeignKeys, target.ForeignKeys, fk => fk.Name, ForeignKeyShape, options,
+        Pair(source.ForeignKeys, target.ForeignKeys, fk => fk.Name, fk => ForeignKeyShape(fk, options.Provider), options,
             fk => changes.Add(new DropForeignKeyChange(source, fk)),
             fk => changes.Add(new AddForeignKeyChange(target, fk)));
         Pair(source.Indexes, target.Indexes, i => i.Name, IndexShape, options,
@@ -189,7 +190,8 @@ public static partial class SchemaDiffer
         }
 
         var bothIdentity = from.Identity.Strategy != IdentityStrategy.None && to.Identity.Strategy != IdentityStrategy.None;
-        if (!bothIdentity && (from.Default.Kind != to.Default.Kind || Normalize(from.Default.Value) != Normalize(to.Default.Value)))
+        if (!bothIdentity && (from.Default.Kind != to.Default.Kind || Normalize(from.Default.Value) != Normalize(to.Default.Value))
+            && !SameRenderedDefault(from, to, options.Provider))
         {
             changes |= ColumnChange.Default;
         }
@@ -199,7 +201,12 @@ public static partial class SchemaDiffer
             changes |= ColumnChange.Identity;
         }
 
-        if (Normalize(from.Generated?.Expression) != Normalize(to.Generated?.Expression) || from.Generated?.Kind != to.Generated?.Kind)
+        // Oracle computes every generated column on read (VIRTUAL) and keeps its expression with quoted names.
+        var oracle = options.Provider == DatabaseProvider.Oracle;
+        string Expression(Column c) => oracle
+            ? Whitespace().Replace(Normalize(c.Generated?.Expression), string.Empty).Replace("\"", string.Empty, StringComparison.Ordinal)
+            : Normalize(c.Generated?.Expression);
+        if (Expression(from) != Expression(to) || (!oracle && from.Generated?.Kind != to.Generated?.Kind) || (from.Generated is null) != (to.Generated is null))
         {
             changes |= ColumnChange.Generated;
         }
@@ -266,7 +273,42 @@ public static partial class SchemaDiffer
             return a == b;
         }
 
-        return from.Type == to.Type;
+        if (from.Type == to.Type)
+        {
+            return true;
+        }
+
+        // A live column carries its native type, a design only its logical one: compare the spelling the design renders to.
+        if (provider is { } q && (Native(from, q) ?? Rendered(from, q)) is { } x && (Native(to, q) ?? Rendered(to, q)) is { } y)
+        {
+            return x == y;
+        }
+
+        return false;
+    }
+
+    private static string? Rendered(Column column, DatabaseProvider provider)
+    {
+        try
+        {
+            return NormalizeType(AlterScriptGenerator.For(provider).Sql.ColumnType(column));
+        }
+        catch (KeyNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    // Defaults written differently that render the same (Oracle: true and 1).
+    private static bool SameRenderedDefault(Column from, Column to, DatabaseProvider? provider)
+    {
+        if (provider is not { } p)
+        {
+            return false;
+        }
+
+        var dialect = AlterScriptGenerator.For(p).Sql.Dialect;
+        return Normalize(dialect.RenderDefault(from.Default)) == Normalize(dialect.RenderDefault(to.Default));
     }
 
     private static void Pair<T>(
@@ -310,8 +352,18 @@ public static partial class SchemaDiffer
         }
     }
 
-    private static string ForeignKeyShape(ForeignKey fk) =>
-        $"{string.Join(",", fk.Columns).ToLowerInvariant()}>{fk.ReferencedTable.ToLowerInvariant()}({string.Join(",", fk.ReferencedColumns).ToLowerInvariant()}) {fk.OnDelete}/{fk.OnUpdate}";
+    private static string ForeignKeyShape(ForeignKey fk, DatabaseProvider? provider)
+    {
+        var (onDelete, onUpdate) = (fk.OnDelete, fk.OnUpdate);
+        if (provider == DatabaseProvider.Oracle)
+        {
+            // Oracle has ON DELETE CASCADE / SET NULL and nothing else; any other action is NO ACTION.
+            onDelete = onDelete is ReferentialAction.Cascade or ReferentialAction.SetNull ? onDelete : ReferentialAction.NoAction;
+            onUpdate = ReferentialAction.NoAction;
+        }
+
+        return $"{string.Join(",", fk.Columns).ToLowerInvariant()}>{fk.ReferencedTable.ToLowerInvariant()}({string.Join(",", fk.ReferencedColumns).ToLowerInvariant()}) {onDelete}/{onUpdate}";
+    }
 
     private static string IndexShape(Index index) =>
         $"{index.Type}:{index.Method}:{string.Join(",", index.Columns.Select(c => c.ColumnName.ToLowerInvariant() + c.Direction))}:{Normalize(index.Filter)}";
@@ -353,8 +405,13 @@ public static partial class SchemaDiffer
     private static string Normalize(string? sql) =>
         sql is null ? string.Empty : Whitespace().Replace(sql.Trim().TrimEnd(';'), " ").ToLowerInvariant();
 
-    private static string NormalizeType(string type) =>
-        Whitespace().Replace(type.Trim().ToLowerInvariant(), " ").Replace(" (", "(", StringComparison.Ordinal).Replace(", ", ",", StringComparison.Ordinal);
+    private static string NormalizeType(string type)
+    {
+        var text = Whitespace().Replace(type.Trim().ToLowerInvariant(), " ").Replace(" (", "(", StringComparison.Ordinal).Replace(", ", ",", StringComparison.Ordinal);
+
+        // Six fractional digits is the default precision of a timestamp.
+        return text.StartsWith("timestamp(6)", StringComparison.Ordinal) ? "timestamp" + text["timestamp(6)".Length..] : text;
+    }
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex Whitespace();

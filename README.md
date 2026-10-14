@@ -2,7 +2,7 @@
 
 A provider-independent **database schema AST** framework in C# — not an ORM. A
 schema is modelled as a strictly-typed, immutable tree and rendered to SQL DDL
-(PostgreSQL, SQL Server, MySQL, SQLite) and language models (C#, Go, Rust,
+(PostgreSQL, SQL Server, MySQL, SQLite, Oracle) and language models (C#, Go, Rust,
 TypeScript, Python, PHP) through a metadata-driven mapping and generation layer.
 
 ## Layout
@@ -14,9 +14,10 @@ bengine/
 │   │                         validation, generators, visitors, serialization)
 │   ├── Bengine.Introspection/ Live-database connectivity: connect, discover,
 │   │                         introspect into the AST, and browse table data
+│   ├── Bengine.Studio/       Bengine Data Studio, the desktop database IDE
 │   ├── Bengine.Cli/          Console demo: schema.json → DDL + models
-│   └── Bengine.Api/          ASP.NET Core API exposing generation + the explorer
-├── designer/                 React + React Flow designer and Database Explorer
+│   └── Bengine.Api/          ASP.NET Core API for the designer (generation, import)
+├── designer/                 React + React Flow schema designer
 ├── examples/                 Sample schema.json documents
 └── Bengine.slnx
 ```
@@ -28,13 +29,14 @@ consume the AST.
 The AST can also be built **from existing SQL**: `Bengine.Parsing` reverses the
 generators, parsing `CREATE TABLE` / `CREATE INDEX` / `ALTER TABLE` DDL into the
 AST and auto-detecting the source dialect (PostgreSQL, SQL Server, MySQL,
-SQLite). The API exposes this at `POST /api/import/sql`, and the designer's
+SQLite, Oracle — including the DDL that `DBMS_METADATA` and SQL Developer
+write). The API exposes this at `POST /api/import/sql`, and the designer's
 **Import SQL** button feeds pasted DDL straight onto the canvas.
 
 ## Database Explorer (live databases)
 
 The AST can also be built **from a running database**. `Bengine.Introspection`
-connects to a live PostgreSQL, SQL Server, MySQL, or SQLite database and offers
+connects to a live PostgreSQL, SQL Server, MySQL, SQLite, or Oracle database and offers
 three capabilities over one `DatabaseSession`, the way a database tool does:
 
 - **Discover** — list databases, schemas, and relations (`IDatabaseExplorer`).
@@ -95,35 +97,24 @@ Servers (n)
 Every folder carries its child count, and every object has **Properties** and
 **SQL** (PostgreSQL's own `pg_get_*def` output where it exists; tables are
 rendered by Bengine's generator from the introspected AST). MySQL, SQL Server,
-and SQLite use the subset of the hierarchy that applies to them.
+and SQLite use the subset of the hierarchy that applies to them; Oracle shows the
+service connected to as the database, users as schemas (Oracle-maintained ones
+under Catalogs), and adds packages and synonyms, with DDL from `DBMS_METADATA`.
 
 Servers are saved in `~/.config/bengine/servers.json` (owner-only permissions;
-`BENGINE_SERVERS_FILE` overrides the path), shared by the web and desktop
-explorers, and can be **imported from a local pgAdmin 4 or from DataGrip** (and
+`BENGINE_SERVERS_FILE` overrides the path), and can be **imported from a local pgAdmin 4 or from DataGrip** (and
 the other JetBrains IDEs with the Database Tools plugin, such as Rider and
 IntelliJ IDEA): the IDEs' global `options/dataSources.xml`, projects under
 `~/DataGripProjects`, or any project's `.idea/dataSources.xml`. Neither tool
 stores passwords in a readable form (pgAdmin encrypts them; DataGrip keeps them
 in the OS keyring), so imported servers prompt once on first connect ("Save
 password" stores it in the file; otherwise it is kept in memory for the
-session). Drivers Bengine does not support, such as Oracle, are listed as
-skipped.
+session). Oracle data sources are imported too (`@//host:port/service`,
+`@host:port:SID`, and `(DESCRIPTION=…)` URLs; a TNS alias cannot be resolved);
+drivers Bengine does not support, such as DB2, are listed as skipped.
 
-Two front ends drive the engine, both laid out like pgAdmin — the Object
-Explorer on the left; Properties and SQL for the selected node; closable
-**View/Edit Data** tabs (paging, per-column filters, click-to-sort, inline
-edit, add/delete rows, CSV/JSON/SQL export) and **Query Tool** tabs (run the
-selection or everything with F5 / Ctrl+Enter, EXPLAIN, result types under the
-column names):
-
-- **Web** — the `designer`'s **Database Explorer** tab, over the API:
-  `/api/servers` (list, add/edit, remove, test, connect, disconnect, pgAdmin
-  and DataGrip import), `/api/tree/children` and `/api/tree/properties`, and the per-database
-  `/api/db/*` endpoints (`/data`, `/table`, `/query`, `/row/insert`,
-  `/row/update`, `/row/delete`, `/export`, …), which take either a registered
-  `serverId` + `database` or a raw `provider` + `connectionString`.
-- **Desktop** — **Bengine Data Studio** (`Bengine.Studio`), an Avalonia app
-  over the same engine in-process, with DataGrip-style tools (below).
+The engine's front end is **Bengine Data Studio** (`Bengine.Studio`), an
+Avalonia desktop app over the engine in-process (below).
 
 PostgreSQL results are read in text format, as pgAdmin does: every type
 (including ones without a binary form, such as `aclitem` or extension types)
@@ -131,15 +122,25 @@ can be browsed, and numbers, timestamps, arrays, and JSON appear exactly as the
 server prints them. Values typed into filters and edits are sent untyped, so
 PostgreSQL coerces them to the column's type (`uuid`, `timestamp`, `bigint`, …).
 
-> The explorer acts with the credentials you give it: the Data tabs and Query
-> Tool **modify live data** when you edit rows or run DML/DDL. The API listens
-> on localhost only and holds session passwords in memory — do not expose it to
-> other machines, and connect only to databases you are authorized to use.
+**Oracle** (12c and later, through the managed ODP.NET driver — no Oracle client
+install) connects to a service (`host:port/service`, TCPS when SSL is set). Each
+session reads and writes dates and numbers in ISO form, so typed values convert
+regardless of the server's NLS settings, and `NUMBER` values come back exactly
+(as text beyond `decimal`'s range). Scripts split the SQL*Plus way: `;` ends a SQL
+statement, a PL/SQL block or unit runs to its `END;` or to a `/` on its own line,
+and `q'[...]'` strings are understood. Generated DDL writes plain names bare, so
+Oracle folds `users` to `USERS` and checks and views resolve; against a live
+database, names stay exactly as stored. Explain Analyze and Server Activity read
+`V$` views, which need `SELECT_CATALOG_ROLE`.
+
+> Studio acts with the credentials you give it: the Data tabs and Query Tool
+> **modify live data** when you edit rows or run DML/DDL; connect only to
+> databases you are authorized to use.
 
 ### Bengine Data Studio (desktop)
 
 Everything in the explorer above, plus the tools of a database IDE, for
-PostgreSQL, MySQL/MariaDB, SQL Server, and SQLite:
+PostgreSQL, MySQL/MariaDB, SQL Server, SQLite, and Oracle:
 
 - **Database Explorer** — a DataGrip-style tree: data sources at the root,
   databases, schemas, and columns without intermediate folders, object kinds
@@ -166,7 +167,8 @@ PostgreSQL, MySQL/MariaDB, SQL Server, and SQLite:
   keep a local history with diffs.
 - **Dump and restore** — pg_dump/pg_restore/psql and mysqldump/mysql (password
   passed in the environment, SSH tunnels honored), SQL Server `BACKUP`/`RESTORE`,
-  SQLite file copies, and a portable Bengine SQL dump that any provider can replay.
+  SQLite file copies, and a portable Bengine SQL dump that any provider can replay
+  (Oracle dumps through it: `INSERT ALL` batches, identities restarted after the load).
 - **Data compare** — two tables (any servers, any providers) compared by key,
   with the `INSERT`/`UPDATE`/`DELETE` that sync the target.
 - **Connections** — SSH tunnels (host keys trusted on first use), SSL modes and
@@ -196,7 +198,7 @@ Start the generation API (used by the designer):
 dotnet run --project src/Bengine.Api        # http://localhost:5099
 ```
 
-Run the designer and Database Explorer (proxies `/api` to the backend):
+Run the designer (proxies `/api` to the backend):
 
 ```bash
 cd designer
@@ -234,7 +236,8 @@ warn on first launch. Icons and packaging scripts live in `deploy/studio`
 Live-database tests run when `BENGINE_TEST_PG`, `BENGINE_TEST_MYSQL`,
 `BENGINE_TEST_MARIADB`, or `BENGINE_TEST_MSSQL` is set to
 `host;port;database;user;password` (each test works in a scratch database it
-creates and drops); `BENGINE_TEST_SSH` adds the SSH tunnel test and
+creates and drops); `BENGINE_TEST_ORACLE` (`host;port;service;admin;password`)
+runs the Oracle tests in scratch users it creates and drops; `BENGINE_TEST_SSH` adds the SSH tunnel test and
 `BENGINE_TEST_KEYRING=1` the OS keyring test. The desktop UI tests render
 screenshots to the directory named by `BENGINE_SHOTS`.
 

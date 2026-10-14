@@ -111,6 +111,7 @@ public sealed partial class ServerFormViewModel : ObservableObject
         new(DatabaseProvider.MySql, "MySQL / MariaDB"),
         new(DatabaseProvider.SqlServer, "Microsoft SQL Server"),
         new(DatabaseProvider.Sqlite, "SQLite"),
+        new(DatabaseProvider.Oracle, "Oracle Database"),
     ];
 
     /// <summary>Gets the color choices (DataGrip-like: red for production, green for local…).</summary>
@@ -146,6 +147,9 @@ public sealed partial class ServerFormViewModel : ObservableObject
     /// <summary>Gets whether the provider is a network server.</summary>
     public bool IsNetwork => !IsSqlite;
 
+    /// <summary>Gets the caption of the database field: Oracle connects to a service (a pluggable database).</summary>
+    public string DatabaseLabel => SelectedProvider.Provider == DatabaseProvider.Oracle ? "Service name" : "Maintenance database";
+
     /// <summary>Gets the saved registration once <see cref="Save"/> succeeds.</summary>
     public ServerProfile? Saved { get; private set; }
 
@@ -156,6 +160,7 @@ public sealed partial class ServerFormViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsSqlite));
         OnPropertyChanged(nameof(IsNetwork));
+        OnPropertyChanged(nameof(DatabaseLabel));
         if (_existing is not null)
         {
             return;
@@ -166,6 +171,7 @@ public sealed partial class ServerFormViewModel : ObservableObject
             DatabaseProvider.PostgreSql => ((decimal?)5432, "postgres", "postgres"),
             DatabaseProvider.MySql => (3306, string.Empty, "root"),
             DatabaseProvider.SqlServer => (1433, "master", "sa"),
+            DatabaseProvider.Oracle => (1521, "FREEPDB1", "system"),
             _ => (null, string.Empty, string.Empty),
         };
     }

@@ -33,6 +33,12 @@ public sealed class AlterScriptGenerator
     /// </summary>
     public Func<string, IEnumerable<string>>? RebuildEpilogue { get; set; }
 
+    /// <summary>Creates the generator for changes to a live database, whose names are kept exactly as they are.</summary>
+    /// <param name="provider">The provider.</param>
+    /// <returns>The generator.</returns>
+    public static AlterScriptGenerator ForDatabase(DatabaseProvider provider) =>
+        provider == DatabaseProvider.Oracle ? new(new OracleGenerator(foldNames: false)) : For(provider);
+
     /// <summary>Creates the renderer for a provider.</summary>
     /// <param name="provider">The provider.</param>
     /// <returns>The renderer.</returns>
@@ -42,6 +48,7 @@ public sealed class AlterScriptGenerator
         DatabaseProvider.MySql => new MySqlGenerator(),
         DatabaseProvider.SqlServer => new SqlServerGenerator(),
         DatabaseProvider.Sqlite => new SqliteGenerator(),
+        DatabaseProvider.Oracle => new OracleGenerator(),
         _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, "Unknown database provider."),
     });
 
@@ -110,10 +117,13 @@ public sealed class AlterScriptGenerator
                 };
                 break;
             case AddColumnChange c:
-                yield return Provider == DatabaseProvider.SqlServer
-                    ? $"ALTER TABLE {Name(c.Table)} ADD {Definition(c.Column)};"
-                    : $"ALTER TABLE {Name(c.Table)} ADD COLUMN {Definition(c.Column)};";
-                if (Provider == DatabaseProvider.PostgreSql && c.Column.Comment is { } columnComment)
+                yield return Provider switch
+                {
+                    DatabaseProvider.SqlServer => $"ALTER TABLE {Name(c.Table)} ADD {Definition(c.Column)};",
+                    DatabaseProvider.Oracle => $"ALTER TABLE {Name(c.Table)} ADD ({Definition(c.Column)});",
+                    _ => $"ALTER TABLE {Name(c.Table)} ADD COLUMN {Definition(c.Column)};",
+                };
+                if (Provider is DatabaseProvider.PostgreSql or DatabaseProvider.Oracle && c.Column.Comment is { } columnComment)
                 {
                     yield return $"COMMENT ON COLUMN {Name(c.Table)}.{_sql.Quote(c.Column.Name)} IS {Literal(columnComment)};";
                 }
@@ -183,6 +193,10 @@ public sealed class AlterScriptGenerator
                 if (Provider == DatabaseProvider.PostgreSql)
                 {
                     yield return $"COMMENT ON TABLE {Name(c.Table)} IS {(c.Table.Comment is { } t ? Literal(t) : "NULL")};";
+                }
+                else if (Provider == DatabaseProvider.Oracle)
+                {
+                    yield return $"COMMENT ON TABLE {Name(c.Table)} IS {Literal(c.Table.Comment ?? string.Empty)};";
                 }
                 else if (Provider == DatabaseProvider.MySql)
                 {
@@ -261,6 +275,44 @@ public sealed class AlterScriptGenerator
             case DatabaseProvider.MySql:
                 // MODIFY restates the whole definition: type, nullability, default, auto-increment, comment.
                 yield return $"ALTER TABLE {table} MODIFY COLUMN {Definition(c.To)};";
+                break;
+
+            case DatabaseProvider.Oracle:
+                // MODIFY takes only what changes: restating NOT NULL on a NOT NULL column fails (ORA-01442).
+                if (c.Changes.HasFlag(ColumnChange.Type))
+                {
+                    yield return $"ALTER TABLE {table} MODIFY ({column} {_sql.ColumnType(c.To)});";
+                }
+
+                if (c.Changes.HasFlag(ColumnChange.Default))
+                {
+                    yield return $"ALTER TABLE {table} MODIFY ({column} DEFAULT {_sql.Dialect.RenderDefault(c.To.Default) ?? "NULL"});";
+                }
+
+                if (c.Changes.HasFlag(ColumnChange.Nullability))
+                {
+                    yield return $"ALTER TABLE {table} MODIFY ({column} {(c.To.IsNullable ? "NULL" : "NOT NULL")});";
+                }
+
+                if (c.Changes.HasFlag(ColumnChange.Identity))
+                {
+                    yield return c.To.Identity.Strategy == IdentityStrategy.None
+                        ? $"ALTER TABLE {table} MODIFY ({column} DROP IDENTITY);"
+                        : $"ALTER TABLE {table} MODIFY ({column}{_sql.Dialect.RenderIdentity(c.To.Identity)});";
+                }
+
+                if (c.Changes.HasFlag(ColumnChange.Generated))
+                {
+                    yield return c.To.Generated is { } generated
+                        ? $"ALTER TABLE {table} MODIFY ({column} AS ({generated.Expression}));"
+                        : $"-- Oracle cannot turn the virtual column {table}.{column} into a stored one; recreate the column.";
+                }
+
+                if (c.Changes.HasFlag(ColumnChange.Comment))
+                {
+                    yield return $"COMMENT ON COLUMN {table}.{column} IS {Literal(c.To.Comment ?? string.Empty)};";
+                }
+
                 break;
 
             case DatabaseProvider.SqlServer:
@@ -367,7 +419,7 @@ public sealed class AlterScriptGenerator
 
     private IEnumerable<string> Comments(Table table)
     {
-        if (Provider != DatabaseProvider.PostgreSql)
+        if (Provider is not (DatabaseProvider.PostgreSql or DatabaseProvider.Oracle))
         {
             yield break;
         }

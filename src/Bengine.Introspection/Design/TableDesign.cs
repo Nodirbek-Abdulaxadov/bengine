@@ -312,7 +312,7 @@ public sealed class TableDesign
         var changes = Changes();
         var target = new DatabaseSchema { Name = "target", Tables = [ToTable()] };
         var source = _original is null ? null : new DatabaseSchema { Name = "source", Tables = [_original] };
-        return AlterScriptGenerator.For(Provider).Render(changes, source, target);
+        return AlterScriptGenerator.ForDatabase(Provider).Render(changes, source, target);
     }
 
     private SchemaDiffOptions Options => new() { Provider = Provider, IgnoreConstraintNames = false };

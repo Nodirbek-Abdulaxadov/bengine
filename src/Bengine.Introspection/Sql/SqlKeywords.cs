@@ -50,6 +50,15 @@ public static class SqlKeywords
             "REINDEX", "INDEXED", "TEMP", "TEMPORARY", "CONFLICT", "ABORT", "FAIL", "IGNORE", "REPLACE", "RETURNING",
             "UPSERT", "DO", "NOTHING", "VIRTUAL",
         ],
+        [DatabaseProvider.Oracle] =
+        [
+            "MINUS", "CONNECT", "PRIOR", "START", "NOCYCLE", "LEVEL", "ROWNUM", "ROWID", "DUAL", "SYSDATE", "SYSTIMESTAMP",
+            "DECLARE", "EXCEPTION", "RAISE", "LOOP", "EXIT", "WHILE", "FOR", "RETURN", "IS", "PACKAGE", "BODY", "TYPE", "RECORD",
+            "CURSOR", "OPEN", "CLOSE", "PRAGMA", "AUTONOMOUS_TRANSACTION", "BULK", "COLLECT", "FORALL", "IMMEDIATE", "EXECUTE",
+            "SYNONYM", "PUBLIC", "TABLESPACE", "MATERIALIZED", "REFRESH", "PURGE", "FLASHBACK", "GENERATED", "ALWAYS", "IDENTITY",
+            "VIRTUAL", "INVISIBLE", "MODIFY", "ENABLE", "DISABLE", "NOVALIDATE", "PIVOT", "UNPIVOT", "SAMPLE", "SIBLINGS",
+            "RETURNING", "LOG", "ERRORS", "COMMENT", "NOCACHE", "NOORDER", "EDITIONABLE", "NONEDITIONABLE",
+        ],
     };
 
     private static readonly string[] CommonFunctions =
@@ -85,6 +94,14 @@ public static class SqlKeywords
             "DATE", "TIME", "DATETIME", "JULIANDAY", "STRFTIME", "IFNULL", "IIF", "INSTR", "PRINTF", "GROUP_CONCAT",
             "JSON_EXTRACT", "JSON_OBJECT", "JSON_GROUP_ARRAY", "RANDOM", "TYPEOF", "LAST_INSERT_ROWID", "CHANGES", "SUBSTR",
         ],
+        [DatabaseProvider.Oracle] =
+        [
+            "NVL", "NVL2", "DECODE", "TO_CHAR", "TO_DATE", "TO_TIMESTAMP", "TO_NUMBER", "TRUNC", "ADD_MONTHS", "MONTHS_BETWEEN",
+            "LAST_DAY", "NEXT_DAY", "EXTRACT", "SUBSTR", "INSTR", "LPAD", "RPAD", "INITCAP", "LISTAGG", "REGEXP_LIKE",
+            "REGEXP_SUBSTR", "REGEXP_REPLACE", "REGEXP_INSTR", "SYS_GUID", "SYS_CONTEXT", "USERENV", "GREATEST", "LEAST",
+            "CEIL", "MOD", "POWER", "SQRT", "CONCAT", "RAWTOHEX", "HEXTORAW", "CAST", "JSON_VALUE", "JSON_QUERY", "JSON_OBJECT",
+            "JSON_TABLE", "XMLAGG", "XMLELEMENT", "NUMTODSINTERVAL", "NUMTOYMINTERVAL", "LNNVL", "NULLIF", "COALESCE",
+        ],
     };
 
     private static readonly HashSet<string> Reserved = new(StringComparer.OrdinalIgnoreCase)
@@ -96,6 +113,15 @@ public static class SqlKeywords
         "NOT", "NULL", "OFFSET", "ON", "OR", "ORDER", "OUTER", "PRIMARY", "REFERENCES", "RIGHT", "SELECT", "SET", "TABLE",
         "THEN", "TO", "TRUE", "UNION", "UNIQUE", "UPDATE", "USER", "USING", "VALUES", "WHEN", "WHERE", "WITH", "WINDOW",
         "OVER", "PARTITION", "ROWS", "RANGE", "ANALYZE", "TOP", "INDEX", "VIEW", "TRIGGER", "PROCEDURE", "FUNCTION",
+    };
+
+    private static readonly HashSet<string> OracleReserved = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ACCESS", "AUDIT", "CLUSTER", "COMMENT", "COMPRESS", "CONNECT", "DATE", "DECIMAL", "EXCLUSIVE", "FILE", "FLOAT",
+        "IDENTIFIED", "IMMEDIATE", "INCREMENT", "INITIAL", "INTEGER", "LEVEL", "LOCK", "LONG", "MAXEXTENTS", "MINUS",
+        "MLSLABEL", "MODE", "MODIFY", "NOAUDIT", "NOCOMPRESS", "NOWAIT", "NUMBER", "OF", "OFFLINE", "ONLINE", "OPTION",
+        "PCTFREE", "PRIOR", "PUBLIC", "RAW", "RENAME", "RESOURCE", "REVOKE", "ROW", "ROWID", "ROWNUM", "SESSION", "SHARE",
+        "SIZE", "SMALLINT", "START", "SUCCESSFUL", "SYNONYM", "SYSDATE", "UID", "VALIDATE", "VARCHAR", "VARCHAR2", "WHENEVER",
     };
 
     /// <summary>Gets the keywords of a dialect, upper-case.</summary>
@@ -133,6 +159,15 @@ public static class SqlKeywords
     /// <returns>The identifier, quoted if necessary.</returns>
     public static string QuoteIfNeeded(string name, DatabaseProvider provider)
     {
+        // Oracle folds bare names to upper case, so only a plain upper-case name may go bare.
+        if (provider == DatabaseProvider.Oracle)
+        {
+            var bare = name.Length > 0 && name[0] is >= 'A' and <= 'Z'
+                && name.All(c => c is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_' or '$' or '#')
+                && !IsReserved(name) && !OracleReserved.Contains(name);
+            return bare ? name : "\"" + name.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+        }
+
         var plain = name.Length > 0 && (char.IsLetter(name[0]) || name[0] == '_')
             && name.All(c => char.IsLetterOrDigit(c) || c == '_')
             && (provider != DatabaseProvider.PostgreSql || !name.Any(char.IsUpper))

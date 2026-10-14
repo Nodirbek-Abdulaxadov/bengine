@@ -192,6 +192,9 @@ public static class DataGripImporter
                 return true;
             }
 
+            case "oracle":
+                return TryMapOracle(name, group, body, user, out profile, out reason);
+
             case "sqlite":
             {
                 var path = body["sqlite:".Length..].Split('?', 2)[0];
@@ -209,6 +212,53 @@ public static class DataGripImporter
                 reason = $"Unsupported driver ({scheme}).";
                 return false;
         }
+    }
+
+    // jdbc:oracle:thin:[user/pass]@//host:port/service, @host:port:SID, or @(DESCRIPTION=…); a TNS alias cannot be resolved here.
+    private static bool TryMapOracle(string name, string group, string body, string? user, out ServerProfile? profile, out string? reason)
+    {
+        profile = null;
+        reason = null;
+        var at = body.IndexOf('@', StringComparison.Ordinal);
+        if (at < 0)
+        {
+            reason = "No host in the Oracle URL.";
+            return false;
+        }
+
+        var target = body[(at + 1)..].Trim();
+        string? host;
+        int? port = null;
+        string? service;
+        if (target.StartsWith('('))
+        {
+            string? Value(string key) => System.Text.RegularExpressions.Regex.Match(target, key + @"\s*=\s*([^)\s]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) is { Success: true } m ? m.Groups[1].Value : null;
+            host = Value("HOST");
+            port = int.TryParse(Value("PORT"), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var p) ? p : null;
+            service = Value("SERVICE_NAME") ?? Value("SID");
+        }
+        else
+        {
+            target = target.TrimStart('/').Split('?', 2)[0];
+            var slash = target.IndexOf('/', StringComparison.Ordinal);
+            var parts = (slash >= 0 ? target[..slash] : target).Split(':');
+            host = parts[0];
+            if (parts.Length > 1 && int.TryParse(parts[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var p))
+            {
+                port = p;
+            }
+
+            service = slash >= 0 ? target[(slash + 1)..] : parts.Length > 2 ? parts[2] : null;
+        }
+
+        if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(service))
+        {
+            reason = "Oracle TNS alias or incomplete URL (set host, port, and service by hand).";
+            return false;
+        }
+
+        profile = Network(name, group, DatabaseProvider.Oracle, host, port, service, user, null);
+        return true;
     }
 
     private static ServerProfile Network(string name, string group, DatabaseProvider provider, string host, int? port, string? database, string? user, string? options) => new()

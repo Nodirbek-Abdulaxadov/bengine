@@ -20,6 +20,9 @@ internal static class DialectFactory
         DatabaseProvider.SqlServer => new SqlServerDialect(),
         DatabaseProvider.MySql => new MySqlDialect(),
         DatabaseProvider.Sqlite => new SqliteDialect(),
+
+        // Live objects keep their exact names (see OracleDialect).
+        DatabaseProvider.Oracle => new OracleDialect(foldNames: false),
         _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, "Unknown database provider."),
     };
 }

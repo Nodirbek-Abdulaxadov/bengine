@@ -10,6 +10,7 @@ const PROVIDERS: { value: string; label: string }[] = [
   { value: 'MySql', label: 'MySQL' },
   { value: 'SqlServer', label: 'SqlServer' },
   { value: 'Sqlite', label: 'Sqlite' },
+  { value: 'Oracle', label: 'Oracle' },
 ];
 
 const LANGUAGES: { value: string; label: string; ext: string }[] = [

@@ -83,7 +83,7 @@ public sealed class DatabaseSession : IAsyncDisposable
     public bool InTransaction => _transaction is not null;
 
     /// <summary>Gets the database the connection is attached to.</summary>
-    public string Database => _connection.Database;
+    public string Database => _connection is Oracle.ManagedDataAccess.Client.OracleConnection oracle ? oracle.ServiceName : _connection.Database;
 
     /// <summary>Gets a value indicating whether the connection is still open.</summary>
     public bool IsOpen => _connection.State == ConnectionState.Open;
@@ -123,6 +123,7 @@ public sealed class DatabaseSession : IAsyncDisposable
             {
                 await using var command = connection.CreateCommand();
                 command.CommandText = sql;
+                Connection.OracleSupport.Prepare(command);
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -258,6 +259,9 @@ public sealed class DatabaseSession : IAsyncDisposable
                 sql.FireInfoMessageEventOnUserErrors = false;
                 sql.InfoMessage += (_, e) => ServerMessage?.Invoke(e.Message);
                 break;
+            case Oracle.ManagedDataAccess.Client.OracleConnection oracle:
+                oracle.InfoMessage += (_, e) => ServerMessage?.Invoke(e.Message);
+                break;
             case MySqlConnector.MySqlConnection my:
                 my.InfoMessage += (_, e) =>
                 {
@@ -284,6 +288,7 @@ public sealed class DatabaseSession : IAsyncDisposable
         DatabaseProvider.SqlServer => new SqlServerSchemaProvider(connection) { TransactionSource = transaction },
         DatabaseProvider.MySql => new MySqlSchemaProvider(connection) { TransactionSource = transaction },
         DatabaseProvider.Sqlite => new SqliteSchemaProvider(connection) { TransactionSource = transaction },
+        DatabaseProvider.Oracle => new OracleSchemaProvider(connection) { TransactionSource = transaction },
         _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, "Unknown database provider."),
     };
 }

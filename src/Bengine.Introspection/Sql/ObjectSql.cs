@@ -18,7 +18,7 @@ public static class ObjectSql
     public static bool CanDrop(NodeKind kind) => kind is NodeKind.Table or NodeKind.View or NodeKind.MaterializedView
         or NodeKind.Sequence or NodeKind.Index or NodeKind.Trigger or NodeKind.Function or NodeKind.Procedure
         or NodeKind.TriggerFunction or NodeKind.Schema or NodeKind.Database or NodeKind.Column or NodeKind.ForeignTable
-        or NodeKind.Type or NodeKind.Domain;
+        or NodeKind.Type or NodeKind.Domain or NodeKind.Package or NodeKind.Synonym;
 
     /// <summary>Builds the statement that drops an object.</summary>
     /// <param name="provider">The provider.</param>
@@ -31,6 +31,11 @@ public static class ObjectSql
         var name = node.Name ?? throw new NotSupportedException("A folder cannot be dropped.");
         var q = Qualified(provider, node.Schema, name);
         var tail = cascade && provider == DatabaseProvider.PostgreSql ? " CASCADE" : string.Empty;
+        if (provider == DatabaseProvider.Oracle)
+        {
+            return OracleDrop(node, q, name, cascade);
+        }
+
         var relation = node.Relation is { } r ? Qualified(provider, node.Schema, r) : null;
         return node.Kind switch
         {
@@ -64,6 +69,25 @@ public static class ObjectSql
         };
     }
 
+    // Oracle: CASCADE CONSTRAINTS for tables, a schema is a user, the service cannot be dropped.
+    private static string OracleDrop(NodeRef node, string q, string name, bool cascade) => node.Kind switch
+    {
+        NodeKind.Table => $"DROP TABLE {q}{(cascade ? " CASCADE CONSTRAINTS" : string.Empty)}",
+        NodeKind.View => $"DROP VIEW {q}{(cascade ? " CASCADE CONSTRAINTS" : string.Empty)}",
+        NodeKind.MaterializedView => $"DROP MATERIALIZED VIEW {q}",
+        NodeKind.Sequence => $"DROP SEQUENCE {q}",
+        NodeKind.Index => $"DROP INDEX {q}",
+        NodeKind.Trigger => $"DROP TRIGGER {q}",
+        NodeKind.Function => $"DROP FUNCTION {q}",
+        NodeKind.Procedure => $"DROP PROCEDURE {q}",
+        NodeKind.Package => $"DROP PACKAGE {q}",
+        NodeKind.Type => $"DROP TYPE {q}{(cascade ? " FORCE" : string.Empty)}",
+        NodeKind.Synonym => $"DROP SYNONYM {q}",
+        NodeKind.Column => $"ALTER TABLE {Qualified(DatabaseProvider.Oracle, node.Schema, node.Relation!)} DROP COLUMN {Quote(DatabaseProvider.Oracle, name)}",
+        NodeKind.Schema => $"DROP USER {Quote(DatabaseProvider.Oracle, name)}{(cascade ? " CASCADE" : string.Empty)}",
+        _ => throw new NotSupportedException($"{node.Kind} objects cannot be dropped from the explorer on Oracle."),
+    } + ";";
+
     /// <summary>Builds the statement that empties a table.</summary>
     /// <param name="provider">The provider.</param>
     /// <param name="node">The table.</param>
@@ -91,6 +115,21 @@ public static class ObjectSql
         var name = node.Name!;
         var q = Qualified(provider, node.Schema, name);
         var to = Quote(provider, newName);
+        if (provider == DatabaseProvider.Oracle)
+        {
+            return node.Kind switch
+            {
+                NodeKind.Column => $"ALTER TABLE {Qualified(provider, node.Schema, node.Relation!)} RENAME COLUMN {Quote(provider, name)} TO {to};",
+                NodeKind.Table => $"ALTER TABLE {q} RENAME TO {to};",
+                NodeKind.Index => $"ALTER INDEX {q} RENAME TO {to};",
+                NodeKind.MaterializedView => $"ALTER MATERIALIZED VIEW {q} RENAME TO {to};",
+
+                // RENAME works on the connected user's own views and sequences.
+                NodeKind.View or NodeKind.Sequence => $"RENAME {Quote(provider, name)} TO {to};",
+                _ => throw new NotSupportedException($"Renaming a {node.Kind} is not supported on Oracle."),
+            };
+        }
+
         if (provider == DatabaseProvider.SqlServer)
         {
             string Literal(string text) => "N'" + text.Replace("'", "''", StringComparison.Ordinal) + "'";
@@ -144,9 +183,12 @@ public static class ObjectSql
             "insert" => $"INSERT INTO {q} ({string.Join(", ", writable.Select(c => Quote(provider, c.Name)))})\nVALUES ({string.Join(", ", writable.Select(c => Param(c.Name)))});",
             "update" => $"UPDATE {q}\nSET {string.Join(",\n    ", (settable.Count > 0 ? settable : writable).Select(c => $"{Quote(provider, c.Name)} = {Param(c.Name)}"))}\nWHERE {where};",
             "delete" => $"DELETE FROM {q}\nWHERE {where};",
-            _ => provider == DatabaseProvider.SqlServer
-                ? $"SELECT TOP 100 {string.Join(",\n       ", columns)}\nFROM {q};"
-                : $"SELECT {string.Join(",\n       ", columns)}\nFROM {q}\nLIMIT 100;",
+            _ => provider switch
+            {
+                DatabaseProvider.SqlServer => $"SELECT TOP 100 {string.Join(",\n       ", columns)}\nFROM {q};",
+                DatabaseProvider.Oracle => $"SELECT {string.Join(",\n       ", columns)}\nFROM {q}\nFETCH FIRST 100 ROWS ONLY;",
+                _ => $"SELECT {string.Join(",\n       ", columns)}\nFROM {q}\nLIMIT 100;",
+            },
         };
     }
 

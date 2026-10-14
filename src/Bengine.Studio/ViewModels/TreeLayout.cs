@@ -34,8 +34,8 @@ public sealed partial class TreeItemViewModel
     [
         NodeKind.TablesFolder, NodeKind.ViewsFolder, NodeKind.MaterializedViewsFolder, NodeKind.ForeignTablesFolder,
         NodeKind.FunctionsFolder, NodeKind.AggregatesFolder, NodeKind.SequencesFolder, NodeKind.TypesFolder,
-        NodeKind.DomainsFolder, NodeKind.CollationsFolder, NodeKind.EventsFolder, NodeKind.IndexesFolder,
-        NodeKind.TriggersFolder,
+        NodeKind.PackagesFolder, NodeKind.DomainsFolder, NodeKind.CollationsFolder, NodeKind.SynonymsFolder,
+        NodeKind.EventsFolder, NodeKind.IndexesFolder, NodeKind.TriggersFolder,
     ];
 
     /// <summary>Gets the DataGrip label of an engine folder (<c>Tables</c> → <c>tables</c>).</summary>

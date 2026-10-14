@@ -15,7 +15,9 @@ public static class SqlLiterals
     /// <param name="value">The value.</param>
     /// <param name="provider">The provider.</param>
     /// <returns>The literal.</returns>
-    public static string Format(object? value, DatabaseProvider provider) => value switch
+    public static string Format(object? value, DatabaseProvider provider) => provider == DatabaseProvider.Oracle && Oracle(value) is { } oracle
+        ? oracle
+        : value switch
     {
         null => "NULL",
         SqlDefault => "DEFAULT",
@@ -37,6 +39,20 @@ public static class SqlLiterals
     };
 
     private static System.Globalization.CultureInfo Invariant => System.Globalization.CultureInfo.InvariantCulture;
+
+    // Oracle's ANSI literals keep dates independent of the session's NLS formats.
+    private static string? Oracle(object? value) => value switch
+    {
+        bool b => b ? "1" : "0",
+        DateTime dt when dt.TimeOfDay == TimeSpan.Zero => $"DATE '{dt.ToString("yyyy-MM-dd", Invariant)}'",
+        DateTime dt => $"TIMESTAMP '{dt.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", Invariant).TrimEnd('.')}'",
+        DateTimeOffset dto => $"TIMESTAMP '{dto.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", Invariant).TrimEnd('.')} {dto.ToString("zzz", Invariant)}'",
+        DateOnly date => $"DATE '{date.ToString("yyyy-MM-dd", Invariant)}'",
+        TimeSpan span => $"INTERVAL '{span.Days} {span.ToString(@"hh\:mm\:ss\.FFFFFFF", Invariant).TrimEnd('.')}' DAY TO SECOND",
+        byte[] bytes => $"HEXTORAW('{Convert.ToHexString(bytes)}')",
+        Guid guid => $"HEXTORAW('{Convert.ToHexString(guid.ToByteArray())}')",
+        _ => null,
+    };
 
     private static string Quote(string text, DatabaseProvider provider) =>
         (provider == DatabaseProvider.SqlServer ? "N'" : "'")

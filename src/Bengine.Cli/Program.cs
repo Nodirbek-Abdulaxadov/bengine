@@ -123,6 +123,7 @@ ISqlGenerator[] sqlGenerators =
     new SqlServerGenerator(),
     new MySqlGenerator(),
     new SqliteGenerator(),
+    new OracleGenerator(),
 ];
 
 // Every supported target language and its generator.

@@ -401,6 +401,7 @@ public sealed class SqlEditor : TextEditor
         ["selc"] = "SELECT COUNT(*) FROM ${table} ${alias} WHERE ${alias}.${END};",
         ["lim"] = "SELECT * FROM ${table} LIMIT ${100}${END};",
         ["top"] = "SELECT TOP ${100} * FROM ${table}${END};",
+        ["fetch"] = "SELECT * FROM ${table} FETCH FIRST ${100} ROWS ONLY${END};",
         ["ins"] = "INSERT INTO ${table} (${columns}) VALUES (${values}${END});",
         ["upd"] = "UPDATE ${table} SET ${column} = ${value} WHERE ${END};",
         ["del"] = "DELETE FROM ${table} WHERE ${END};",
@@ -425,9 +426,9 @@ public sealed class SqlEditor : TextEditor
             return false;
         }
 
-        if (Provider == DatabaseProvider.SqlServer && word.Equals("lim", StringComparison.OrdinalIgnoreCase))
+        if (word.Equals("lim", StringComparison.OrdinalIgnoreCase) && Provider is DatabaseProvider.SqlServer or DatabaseProvider.Oracle)
         {
-            template = Templates["top"];
+            template = Templates[Provider == DatabaseProvider.SqlServer ? "top" : "fetch"];
         }
 
         var snippet = new Snippet();

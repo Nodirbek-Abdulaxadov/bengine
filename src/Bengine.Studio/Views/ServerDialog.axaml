@@ -62,7 +62,7 @@
           <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Host}" IsVisible="{Binding IsNetwork}" />
           <TextBlock Grid.Row="3" Classes="label" Text="Port" IsVisible="{Binding IsNetwork}" />
           <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Port}" Minimum="1" Maximum="65535" FormatString="0" ShowButtonSpinner="False" IsVisible="{Binding IsNetwork}" />
-          <TextBlock Grid.Row="4" Classes="label" Text="Maintenance database" IsVisible="{Binding IsNetwork}" />
+          <TextBlock Grid.Row="4" Classes="label" Text="{Binding DatabaseLabel}" IsVisible="{Binding IsNetwork}" />
           <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding MaintenanceDatabase}" IsVisible="{Binding IsNetwork}" />
           <TextBlock Grid.Row="5" Classes="label" Text="Username" IsVisible="{Binding IsNetwork}" />
           <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding Username}" IsVisible="{Binding IsNetwork}" />

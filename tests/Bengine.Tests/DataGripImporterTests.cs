@@ -43,6 +43,10 @@ public sealed class DataGripImporterTests : IDisposable
                   <driver-ref>oracle</driver-ref>
                   <jdbc-url>jdbc:oracle:thin:@db:1521:ORCL</jdbc-url>
                 </data-source>
+                <data-source source="LOCAL" name="old-db2" uuid="66666666-6666-6666-6666-666666666666">
+                  <driver-ref>db2</driver-ref>
+                  <jdbc-url>jdbc:db2://db:50000/SAMPLE</jdbc-url>
+                </data-source>
               </component>
             </project>
             """);
@@ -103,6 +107,22 @@ public sealed class DataGripImporterTests : IDisposable
         var sqlite = servers["local-file"];
         Assert.Equal(DatabaseProvider.Sqlite, sqlite.Provider);
         Assert.Equal(Path.Combine(_project, "data", "app.db"), sqlite.FilePath);
+
+        var oracle = servers["legacy-oracle"];
+        Assert.Equal((DatabaseProvider.Oracle, "db", 1521, "ORCL"), (oracle.Provider, oracle.Host, oracle.Port, oracle.MaintenanceDatabase));
+    }
+
+    [Theory]
+    [InlineData("jdbc:oracle:thin:@//db.example.com:1522/sales.example.com", "db.example.com", 1522, "sales.example.com")]
+    [InlineData("jdbc:oracle:thin:@db:1521/FREEPDB1", "db", 1521, "FREEPDB1")]
+    [InlineData("jdbc:oracle:thin:scott/tiger@db:1521:ORCL", "db", 1521, "ORCL")]
+    [InlineData("jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=10.0.0.5)(PORT=1530))(CONNECT_DATA=(SERVICE_NAME=hr)))", "10.0.0.5", 1530, "hr")]
+    public void Parses_oracle_url_variants(string url, string host, int? port, string service)
+    {
+        Assert.True(DataGripImporter.TryMap("x", "g", url, null, out var profile, out var reason), reason);
+        Assert.Equal((DatabaseProvider.Oracle, host, port, service), (profile!.Provider, profile.Host, profile.Port, profile.MaintenanceDatabase));
+        Assert.False(DataGripImporter.TryMap("x", "g", "jdbc:oracle:thin:@PRODTNS", null, out _, out var alias));
+        Assert.Contains("TNS", alias);
     }
 
     [Fact]
@@ -110,8 +130,8 @@ public sealed class DataGripImporterTests : IDisposable
     {
         var skipped = Assert.Single(Import().Skipped);
 
-        Assert.Equal("legacy-oracle", skipped.Name);
-        Assert.Contains("oracle", skipped.Reason);
+        Assert.Equal("old-db2", skipped.Name);
+        Assert.Contains("db2", skipped.Reason);
     }
 
     [Theory]

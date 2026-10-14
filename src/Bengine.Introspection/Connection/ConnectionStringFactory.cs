@@ -33,6 +33,7 @@ public static class ConnectionStringFactory
                 DatabaseProvider.SqlServer => BuildSqlServer(server, database, secret),
                 DatabaseProvider.MySql => BuildMySql(server, database, secret),
                 DatabaseProvider.Sqlite => BuildSqlite(server),
+                DatabaseProvider.Oracle => BuildOracle(server, database, secret),
                 _ => throw new ArgumentOutOfRangeException(nameof(server), server.Provider, "Unknown database provider."),
             };
         }
@@ -171,6 +172,30 @@ public static class ConnectionStringFactory
         if (!string.IsNullOrWhiteSpace(server.SslClientKey))
         {
             builder.SslKey = server.SslClientKey;
+        }
+
+        return builder.ConnectionString;
+    }
+
+    // Oracle: a "database" is a service (a pluggable database); TCPS when SSL is asked.
+    private static string BuildOracle(ServerProfile server, string? database, string? password)
+    {
+        var service = database ?? server.MaintenanceDatabase
+            ?? throw new IntrospectionException($"'{server.Name}' has no Oracle service name (server properties → Service).");
+        var host = server.Host ?? "localhost";
+        var port = server.Port ?? 1521;
+        var mode = Ssl(server.SslMode);
+        var builder = new Oracle.ManagedDataAccess.Client.OracleConnectionStringBuilder(server.Options ?? string.Empty)
+        {
+            DataSource = mode is "require" or "verify-ca" or "verify-full"
+                ? $"(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST={host})(PORT={port}))(CONNECT_DATA=(SERVICE_NAME={service}))" +
+                  $"(SECURITY=(SSL_SERVER_DN_MATCH={(mode == "verify-full" ? "YES" : "NO")})))"
+                : $"{host}:{port}/{service}",
+            UserID = server.Username ?? string.Empty,
+        };
+        if (!string.IsNullOrEmpty(password))
+        {
+            builder.Password = password;
         }
 
         return builder.ConnectionString;

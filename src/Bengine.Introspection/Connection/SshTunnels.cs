@@ -77,6 +77,7 @@ public static class SshTunnels
     {
         Enums.DatabaseProvider.MySql => 3306,
         Enums.DatabaseProvider.SqlServer => 1433,
+        Enums.DatabaseProvider.Oracle => 1521,
         _ => 5432,
     };
 

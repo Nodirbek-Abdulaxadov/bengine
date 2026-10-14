@@ -118,6 +118,7 @@ public class SqlImportIntegrationTests
         DatabaseProvider.SqlServer => new SqlServerGenerator(),
         DatabaseProvider.MySql => new MySqlGenerator(),
         DatabaseProvider.Sqlite => new SqliteGenerator(),
+        DatabaseProvider.Oracle => new OracleGenerator(),
         _ => throw new ArgumentOutOfRangeException(nameof(provider)),
     };
 

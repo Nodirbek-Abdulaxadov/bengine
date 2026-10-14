@@ -31,7 +31,7 @@ public static class SchemaApplier
         DatabaseSchema? target,
         CancellationToken cancellationToken = default)
     {
-        var generator = AlterScriptGenerator.For(session.Provider);
+        var generator = AlterScriptGenerator.ForDatabase(session.Provider);
         if (session.Provider == DatabaseProvider.Sqlite)
         {
             var tables = changes.Where(AlterScriptGenerator.NeedsRebuild).Select(c => c.Subject).Distinct().ToList();

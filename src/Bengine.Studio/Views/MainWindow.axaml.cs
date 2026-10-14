@@ -557,12 +557,12 @@ public partial class MainWindow : Window, IDialogService
 
     /// <summary>Shows an object's Quick Documentation (Ctrl+Q) in a popup beside its row.</summary>
     /// <param name="item">The row.</param>
-    /// <returns>A task that completes when the documentation is loaded.</returns>
-    public async Task ShowQuickDocAsync(TreeItemViewModel item)
+    /// <returns>The popup, once the documentation is loaded (closed by clicking elsewhere or Escape).</returns>
+    public async Task<Flyout?> ShowQuickDocAsync(TreeItemViewModel item)
     {
         if (ViewModel is not { } vm)
         {
-            return;
+            return null;
         }
 
         var doc = vm.QuickDoc;
@@ -618,6 +618,8 @@ public partial class MainWindow : Window, IDialogService
             ddl.IsVisible = true;
             ((Border)body.Children[^1]).IsVisible = true;
         }
+
+        return flyout;
     }
 
     private void OnTreeContextRequested(object? sender, ContextRequestedEventArgs e)
@@ -758,7 +760,8 @@ public partial class MainWindow : Window, IDialogService
         if (ExplorerViewModel.CanDrop(item))
         {
             Add("Drop…", () => _ = vm.DropAsync(item), "object.drop", !readOnly);
-            if (server.Provider == Bengine.Enums.DatabaseProvider.PostgreSql && kind is not ("Database" or "Column"))
+            if ((server.Provider == Bengine.Enums.DatabaseProvider.PostgreSql && kind is not ("Database" or "Column"))
+                || (server.Provider == Bengine.Enums.DatabaseProvider.Oracle && kind is "Table" or "View" or "Type" or "Schema"))
             {
                 Add("Drop Cascade…", () => _ = vm.DropAsync(item, cascade: true), enabled: !readOnly);
             }
@@ -833,9 +836,12 @@ public partial class MainWindow : Window, IDialogService
     private static string SelectTop(Bengine.Enums.DatabaseProvider provider, string? schema, string name)
     {
         var target = Bengine.Introspection.Sql.ObjectSql.Qualified(provider, schema, name);
-        return provider == Bengine.Enums.DatabaseProvider.SqlServer
-            ? $"SELECT TOP 100 * FROM {target};"
-            : $"SELECT * FROM {target}\nLIMIT 100;";
+        return provider switch
+        {
+            Bengine.Enums.DatabaseProvider.SqlServer => $"SELECT TOP 100 * FROM {target};",
+            Bengine.Enums.DatabaseProvider.Oracle => $"SELECT * FROM {target}\nFETCH FIRST 100 ROWS ONLY;",
+            _ => $"SELECT * FROM {target}\nLIMIT 100;",
+        };
     }
 
     private static MenuItem Menu(string header, Action action)

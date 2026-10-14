@@ -42,6 +42,7 @@ public static partial class PlanReader
                 DatabaseProvider.PostgreSql => await PostgresAsync(session, sql, analyze, cancellationToken).ConfigureAwait(false),
                 DatabaseProvider.MySql => await MySqlAsync(session, sql, analyze, cancellationToken).ConfigureAwait(false),
                 DatabaseProvider.SqlServer => await SqlServerAsync(session, sql, analyze, cancellationToken).ConfigureAwait(false),
+                DatabaseProvider.Oracle => await OracleAsync(session, sql, analyze, cancellationToken).ConfigureAwait(false),
                 _ => await SqliteAsync(session, sql, cancellationToken).ConfigureAwait(false),
             };
             plan.Annotate();
@@ -371,6 +372,120 @@ public static partial class PlanReader
         }
 
         return null;
+    }
+
+    // ------------------------------------------------------------------ Oracle
+
+    private const string OraclePlanColumns =
+        "id, parent_id, operation, options, object_owner, object_name, object_alias, cost, cardinality, bytes, access_predicates, filter_predicates";
+
+    // EXPLAIN PLAN fills PLAN_TABLE; Analyze runs the statement with row-source statistics
+    // and reads its cursor's plan from V$SQL_PLAN_STATISTICS_ALL (needs SELECT_CATALOG_ROLE).
+    private static async Task<QueryPlan> OracleAsync(DatabaseSession session, string sql, bool analyze, CancellationToken ct)
+    {
+        if (!analyze)
+        {
+            var id = "bengine_" + Guid.NewGuid().ToString("N")[..12];
+            await session.Query.ExecuteAllAsync($"EXPLAIN PLAN SET STATEMENT_ID = '{id}' FOR {sql}", 1, ct).ConfigureAwait(false);
+            var planned = await session.Query.ExecuteAsync($"SELECT {OraclePlanColumns}, NULL, NULL, NULL FROM plan_table WHERE statement_id = '{id}' ORDER BY id", 10_000, ct).ConfigureAwait(false);
+            await session.Query.ExecuteAllAsync($"DELETE FROM plan_table WHERE statement_id = '{id}'", 1, ct).ConfigureAwait(false);
+            return ParseOracle(planned.Rows, analyzed: false);
+        }
+
+        await session.Query.ExecuteAllAsync("ALTER SESSION SET STATISTICS_LEVEL = ALL", 1, ct).ConfigureAwait(false);
+        try
+        {
+            // A unique comment makes a fresh cursor: a statement run before (and kept in ODP.NET's
+            // statement cache) would otherwise reuse a cursor parsed without row-source statistics.
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            await session.Query.ExecuteAllAsync($"{sql} /* bengine:{Guid.NewGuid():N} */", 100_000, ct).ConfigureAwait(false);
+            clock.Stop();
+            var cursor = await session.Query.ExecuteAsync("SELECT prev_sql_id, prev_child_number FROM v$session WHERE sid = SYS_CONTEXT('USERENV', 'SID')", 1, ct).ConfigureAwait(false);
+            var sqlId = cursor.Rows[0][0]?.ToString();
+            var child = Convert.ToInt64(cursor.Rows[0][1], CultureInfo.InvariantCulture);
+            var actual = await session.Query.ExecuteAsync(
+                $"SELECT {OraclePlanColumns}, last_output_rows, last_elapsed_time, last_starts FROM v$sql_plan_statistics_all WHERE sql_id = '{sqlId}' AND child_number = {child} ORDER BY id",
+                10_000,
+                ct).ConfigureAwait(false);
+            var plan = ParseOracle(actual.Rows, analyzed: true);
+            plan.ExecutionTimeMs = clock.Elapsed.TotalMilliseconds;
+            return plan;
+        }
+        catch (IntrospectionException ex) when (ex.Message.Contains("ORA-00942", StringComparison.Ordinal))
+        {
+            throw new IntrospectionException("Explain Analyze on Oracle reads V$SESSION and V$SQL_PLAN_STATISTICS_ALL; grant the user SELECT_CATALOG_ROLE (or SELECT on those views).", ex);
+        }
+        finally
+        {
+            await session.Query.ExecuteAllAsync("ALTER SESSION SET STATISTICS_LEVEL = TYPICAL", 1, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Builds a plan from Oracle plan rows (PLAN_TABLE or V$SQL_PLAN_STATISTICS_ALL columns, in <c>id</c> order).</summary>
+    /// <param name="rows">id, parent_id, operation, options, owner, name, alias, cost, cardinality, bytes, access, filter, actual rows, elapsed µs, starts.</param>
+    /// <param name="analyzed">Whether the rows carry actual statistics.</param>
+    /// <returns>The plan.</returns>
+    public static QueryPlan ParseOracle(IReadOnlyList<IReadOnlyList<object?>> rows, bool analyzed)
+    {
+        static double? Number(object? value) =>
+            value is null ? null : double.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : null;
+        static string? Text(object? value) => value is null ? null : Convert.ToString(value, CultureInfo.InvariantCulture);
+
+        var plan = new QueryPlan { RawFormat = "text", Analyzed = analyzed };
+        var nodes = new Dictionary<long, PlanNode>();
+        var depths = new Dictionary<long, int>();
+        var raw = new System.Text.StringBuilder();
+        foreach (var row in rows)
+        {
+            var id = (long)(Number(row[0]) ?? 0);
+            var operation = string.Join(' ', new[] { Text(row[2]), Text(row[3]) }.Where(t => !string.IsNullOrEmpty(t)));
+            var owner = Text(row[4]);
+            var name = Text(row[5]);
+            var node = new PlanNode
+            {
+                Operation = operation,
+                Object = name is null ? null : (owner is null ? name : $"{owner}.{name}") + (Text(row[6]) is { } alias ? $" {alias.Split('@')[0]}" : string.Empty),
+                TotalCost = Number(row[7]),
+                EstimatedRows = Number(row[8]),
+            };
+            if (Text(row[9]) is { } bytes)
+            {
+                node.Details.Add(new("Bytes", bytes));
+            }
+
+            if (Text(row[10]) is { Length: > 0 } access)
+            {
+                node.Details.Add(new("Access", access));
+            }
+
+            if (Text(row[11]) is { Length: > 0 } filter)
+            {
+                node.Details.Add(new("Filter", filter));
+            }
+
+            if (analyzed && row.Count > 14)
+            {
+                node.ActualRows = Number(row[12]);
+                node.ActualTimeMs = Number(row[13]) / 1000;
+                node.Loops = Number(row[14]);
+            }
+
+            nodes[id] = node;
+            depths[id] = Number(row[1]) is { } up && depths.TryGetValue((long)up, out var above) ? above + 1 : 0;
+            raw.Append(new string(' ', 2 * depths[id])).Append(operation).Append(node.Object is null ? string.Empty : $"  {node.Object}")
+                .Append(node.TotalCost is { } cost ? $"  (cost {cost:0}" : "  (").Append(node.EstimatedRows is { } est ? $", rows {est:0})" : ")").AppendLine();
+            if (Number(row[1]) is { } parent && nodes.TryGetValue((long)parent, out var parentNode))
+            {
+                parentNode.Children.Add(node);
+            }
+            else
+            {
+                plan.Roots.Add(node);
+            }
+        }
+
+        plan.Raw = raw.ToString();
+        return plan;
     }
 
     // ------------------------------------------------------------------ SQLite

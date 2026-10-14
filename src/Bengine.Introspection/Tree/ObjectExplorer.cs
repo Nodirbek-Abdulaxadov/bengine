@@ -138,6 +138,8 @@ public static partial class ObjectExplorer
                     return true;
                 case MySqlConnector.MySqlException my when my.ErrorCode == MySqlConnector.MySqlErrorCode.AccessDenied:
                     return true;
+                case Oracle.ManagedDataAccess.Client.OracleException ora when ora.Number is 1017 or 1005 or 28000:
+                    return true;
                 case Npgsql.NpgsqlException npgsql when npgsql.Message.Contains("password", StringComparison.OrdinalIgnoreCase):
                     return true;
             }
@@ -156,6 +158,7 @@ public static partial class ObjectExplorer
         DatabaseProvider.SqlServer => new SqlServerObjectTree(connection),
         DatabaseProvider.MySql => new MySqlObjectTree(connection),
         DatabaseProvider.Sqlite => new SqliteObjectTree(connection),
+        DatabaseProvider.Oracle => new OracleObjectTree(connection),
         _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, "Unknown database provider."),
     };
 

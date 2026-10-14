@@ -49,6 +49,36 @@ public abstract class SqlDialect
         _ => "NO ACTION",
     };
 
+    /// <summary>
+    /// Gets a value indicating whether a column's <c>DEFAULT</c> and identity
+    /// clauses come before its nullability (Oracle requires it; others accept either).
+    /// </summary>
+    public virtual bool DefaultBeforeNullability => false;
+
+    /// <summary>Maps a schema name to the one written in SQL, or <c>null</c> to leave names unqualified.</summary>
+    /// <param name="schema">The schema of the design or database.</param>
+    /// <returns>The schema to qualify with.</returns>
+    public virtual string? EffectiveSchema(string? schema) => schema;
+
+    /// <summary>Gets a value indicating whether a computed column states its nullability (Oracle's virtual columns can be NOT NULL).</summary>
+    public virtual bool NullabilityOnGeneratedColumns => false;
+
+    /// <summary>Gets the keyword that turns a sequence's cycling off.</summary>
+    public virtual string NoCycleKeyword => "NO CYCLE";
+
+    /// <summary>Renders a foreign key's <c>ON DELETE</c>/<c>ON UPDATE</c> clauses.</summary>
+    /// <param name="onDelete">The delete action.</param>
+    /// <param name="onUpdate">The update action.</param>
+    /// <returns>The clauses, each with a leading space.</returns>
+    public virtual string RenderForeignKeyActions(ReferentialAction onDelete, ReferentialAction onUpdate) =>
+        $" ON DELETE {RenderReferentialAction(onDelete)} ON UPDATE {RenderReferentialAction(onUpdate)}";
+
+    /// <summary>Renders a computed column's clause.</summary>
+    /// <param name="generated">The computation.</param>
+    /// <returns>The clause, with a leading space.</returns>
+    public virtual string RenderGenerated(GeneratedColumn generated) =>
+        $" GENERATED ALWAYS AS ({generated.Expression}) {(generated.Kind == GeneratedKind.Stored ? "STORED" : "VIRTUAL")}";
+
     /// <summary>Renders a default-value clause value, excluding the <c>DEFAULT</c> keyword.</summary>
     /// <param name="value">The default value to render.</param>
     /// <returns>The rendered default expression, or <c>null</c> when there is no default.</returns>

@@ -755,6 +755,7 @@ public sealed partial class ExplorerViewModel : ObservableObject
             {
                 Bengine.Enums.DatabaseProvider.Sqlite => "INTEGER",
                 Bengine.Enums.DatabaseProvider.MySql or Bengine.Enums.DatabaseProvider.SqlServer => "int",
+                Bengine.Enums.DatabaseProvider.Oracle => "NUMBER(19)",
                 _ => "bigint",
             },
             PrimaryKey = true,

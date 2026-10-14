@@ -142,7 +142,7 @@ public static class DbDataTypeRegistry
 
             Meta(DbDataType.Xml, TypeCategory.Document, TypeCapability.None,
                 ValidationKind.None,
-                new[] { DatabaseProvider.PostgreSql, DatabaseProvider.SqlServer }.ToFrozenSet(),
+                new[] { DatabaseProvider.PostgreSql, DatabaseProvider.SqlServer, DatabaseProvider.Oracle }.ToFrozenSet(),
                 langs, noVal, DbTypeLimits.None),
         };
 

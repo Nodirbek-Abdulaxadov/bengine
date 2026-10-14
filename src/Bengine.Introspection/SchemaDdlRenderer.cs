@@ -34,6 +34,7 @@ public static class SchemaDdlRenderer
         DatabaseProvider.SqlServer => new SqlServerGenerator(),
         DatabaseProvider.MySql => new MySqlGenerator(),
         DatabaseProvider.Sqlite => new SqliteGenerator(),
+        DatabaseProvider.Oracle => new OracleGenerator(foldNames: false),
         _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, "Unknown database provider."),
     };
 }

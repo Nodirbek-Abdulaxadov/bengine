@@ -435,7 +435,7 @@ public sealed partial class SchemaCompareViewModel : DocumentViewModel
 
         var provider = Target.UseFile ? Source.Provider : Target.Provider;
         var header = $"-- Make {Target.Label} match {Source.Label}\n-- {Summary}\n\n";
-        Script = header + AlterScriptGenerator.For(provider).Script(included, _targetSchema, _sourceSchema);
+        Script = header + AlterScriptGenerator.ForDatabase(provider).Script(included, _targetSchema, _sourceSchema);
     }
 
     private async Task<string?> BrowseAsync() =>

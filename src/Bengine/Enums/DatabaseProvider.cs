@@ -18,4 +18,7 @@ public enum DatabaseProvider
 
     /// <summary>SQLite.</summary>
     Sqlite,
+
+    /// <summary>Oracle Database (12c and later).</summary>
+    Oracle,
 }

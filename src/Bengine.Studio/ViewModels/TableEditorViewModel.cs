@@ -144,6 +144,7 @@ public sealed partial class TableEditorViewModel : ObservableObject
         DatabaseProvider.PostgreSql => ["bigint", "integer", "smallint", "numeric(12,2)", "real", "double precision", "boolean", "text", "varchar(255)", "char(1)", "uuid", "date", "timestamp", "timestamptz", "time", "interval", "jsonb", "json", "bytea", "inet", "text[]", "integer[]"],
         DatabaseProvider.MySql => ["bigint", "int", "smallint", "tinyint(1)", "decimal(12,2)", "double", "float", "varchar(255)", "char(1)", "text", "longtext", "date", "datetime", "timestamp", "time", "json", "blob", "binary(16)", "enum('a','b')"],
         DatabaseProvider.SqlServer => ["bigint", "int", "smallint", "tinyint", "bit", "decimal(12,2)", "float", "nvarchar(255)", "nvarchar(max)", "varchar(255)", "char(1)", "date", "datetime2", "datetimeoffset", "time", "uniqueidentifier", "varbinary(max)"],
+        DatabaseProvider.Oracle => ["NUMBER(19)", "NUMBER(10)", "NUMBER(12,2)", "NUMBER(1)", "VARCHAR2(255)", "VARCHAR2(4000)", "CHAR(1)", "CLOB", "BLOB", "DATE", "TIMESTAMP", "TIMESTAMP WITH TIME ZONE", "BINARY_DOUBLE", "RAW(16)", "INTERVAL DAY TO SECOND", "JSON", "XMLTYPE"],
         _ => ["INTEGER", "REAL", "TEXT", "BLOB", "NUMERIC", "VARCHAR(255)", "BOOLEAN", "DATETIME"],
     };
 

@@ -13,7 +13,7 @@ using Bengine.Introspection.Model;
 /// validates every filter and sort column against them, quotes identifiers with
 /// the provider's dialect, and binds all values as parameters. Paging is
 /// rendered with the provider's native syntax: <c>LIMIT/OFFSET</c> for
-/// PostgreSQL, MySQL, and SQLite, and <c>OFFSET/FETCH</c> for SQL Server.
+/// PostgreSQL, MySQL, and SQLite, and <c>OFFSET/FETCH</c> for SQL Server and Oracle.
 /// </summary>
 public sealed class RelationalDataReader : RelationalComponentBase, ITableDataReader
 {
@@ -58,6 +58,7 @@ public sealed class RelationalDataReader : RelationalComponentBase, ITableDataRe
         await using var command = CreateCommand(sql, parameters);
         PrepareForDisplay(command);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        Bengine.Introspection.Connection.OracleSupport.Prepare(reader);
 
         var resultColumns = new string[reader.FieldCount];
         for (var i = 0; i < reader.FieldCount; i++)
@@ -80,7 +81,7 @@ public sealed class RelationalDataReader : RelationalComponentBase, ITableDataRe
             var row = new object?[reader.FieldCount];
             for (var i = 0; i < reader.FieldCount; i++)
             {
-                var value = reader.GetValue(i);
+                var value = Bengine.Introspection.Connection.OracleSupport.GetValue(reader, i);
                 row[i] = value is DBNull ? null : FromDisplayText(value, resultTypes[i]);
             }
 
@@ -210,6 +211,14 @@ public sealed class RelationalDataReader : RelationalComponentBase, ITableDataRe
     {
         var sql = new StringBuilder();
         sql.Append("SELECT * FROM ").Append(qualified).Append(where);
+
+        if (Provider == DatabaseProvider.Oracle)
+        {
+            // Oracle 12c and later; unlike SQL Server, no ORDER BY is required.
+            sql.Append(orderBy);
+            sql.Append(CultureInfo.InvariantCulture, $" OFFSET {offset} ROWS FETCH NEXT {fetch} ROWS ONLY");
+            return sql.ToString();
+        }
 
         if (Provider == DatabaseProvider.SqlServer)
         {
