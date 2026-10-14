@@ -145,6 +145,34 @@ public static class ProviderTypeMap
                 [DbDataType.Uuid] = "TEXT",
                 [DbDataType.Json] = "TEXT",
             }.ToFrozenDictionary(),
+
+            // Oracle has one NUMBER type: the integer widths are fixed precisions (as the
+            // EF Core and Hibernate Oracle dialects map them), BOOLEAN is NUMBER(1) before 23ai,
+            // there is no TIME type, and JSON lives in a CLOB until 21c.
+            [DatabaseProvider.Oracle] = new Dictionary<DbDataType, string>
+            {
+                [DbDataType.Boolean] = "NUMBER(1)",
+                [DbDataType.TinyInt] = "NUMBER(3)",
+                [DbDataType.SmallInt] = "NUMBER(5)",
+                [DbDataType.Integer] = "NUMBER(10)",
+                [DbDataType.BigInt] = "NUMBER(19)",
+                [DbDataType.Decimal] = "NUMBER",
+                [DbDataType.Real] = "BINARY_FLOAT",
+                [DbDataType.Double] = "BINARY_DOUBLE",
+                [DbDataType.Char] = "CHAR",
+                [DbDataType.VarChar] = "VARCHAR2",
+                [DbDataType.Text] = "CLOB",
+                [DbDataType.Binary] = "RAW",
+                [DbDataType.VarBinary] = "RAW",
+                [DbDataType.Blob] = "BLOB",
+                [DbDataType.Date] = "DATE",
+                [DbDataType.Time] = "INTERVAL DAY(0) TO SECOND(6)",
+                [DbDataType.Timestamp] = "TIMESTAMP",
+                [DbDataType.TimestampTz] = "TIMESTAMP WITH TIME ZONE",
+                [DbDataType.Uuid] = "RAW(16)",
+                [DbDataType.Json] = "CLOB",
+                [DbDataType.Xml] = "XMLTYPE",
+            }.ToFrozenDictionary(),
         }.ToFrozenDictionary();
 
     private static FrozenDictionary<DatabaseProvider, FrozenDictionary<string, DbDataType>> BuildReverse() =>
@@ -222,6 +250,41 @@ public static class ProviderTypeMap
                 ("REAL", DbDataType.Double),
                 ("TEXT", DbDataType.Text),
                 ("BLOB", DbDataType.Blob)),
+
+            [DatabaseProvider.Oracle] = Reverse(
+                ("NUMBER(1)", DbDataType.Boolean),
+                ("NUMBER(3)", DbDataType.TinyInt),
+                ("NUMBER(5)", DbDataType.SmallInt),
+                ("NUMBER(10)", DbDataType.Integer),
+                ("NUMBER(19)", DbDataType.BigInt),
+                ("NUMBER", DbDataType.Decimal),
+                ("FLOAT", DbDataType.Double),
+                ("BINARY_FLOAT", DbDataType.Real),
+                ("BINARY_DOUBLE", DbDataType.Double),
+                ("CHAR", DbDataType.Char),
+                ("NCHAR", DbDataType.Char),
+                ("VARCHAR2", DbDataType.VarChar),
+                ("NVARCHAR2", DbDataType.VarChar),
+                ("CLOB", DbDataType.Text),
+                ("NCLOB", DbDataType.Text),
+                ("LONG", DbDataType.Text),
+                ("RAW", DbDataType.VarBinary),
+                ("RAW(16)", DbDataType.Uuid),
+                ("BLOB", DbDataType.Blob),
+                ("LONG RAW", DbDataType.Blob),
+                ("DATE", DbDataType.Timestamp),
+                ("TIMESTAMP", DbDataType.Timestamp),
+                ("TIMESTAMP WITH TIME ZONE", DbDataType.TimestampTz),
+                ("TIMESTAMP WITH LOCAL TIME ZONE", DbDataType.TimestampTz),
+                ("INTERVAL DAY TO SECOND", DbDataType.Time),
+                ("INTERVAL DAY(0) TO SECOND(6)", DbDataType.Time),
+                ("INTERVAL YEAR TO MONTH", DbDataType.Text),
+                ("ROWID", DbDataType.VarChar),
+                ("UROWID", DbDataType.VarChar),
+                ("BFILE", DbDataType.Blob),
+                ("JSON", DbDataType.Json),
+                ("BOOLEAN", DbDataType.Boolean),
+                ("XMLTYPE", DbDataType.Xml)),
         }.ToFrozenDictionary();
 
     private static FrozenDictionary<string, DbDataType> Reverse(params (string Native, DbDataType Type)[] pairs) =>

@@ -38,6 +38,8 @@ public sealed record EditorMarker(int Start, int Length, string Message, bool Is
 public sealed class SqlEditor : TextEditor
 {
     private static IHighlightingDefinition? _highlighting;
+    private static IHighlightingDefinition? _mongoHighlighting;
+    private DatabaseProvider _provider = DatabaseProvider.PostgreSql;
     private readonly MarkerRenderer _markers;
     private readonly StatementRenderer _statement;
     private readonly Avalonia.Threading.DispatcherTimer _inspectTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
@@ -144,8 +146,16 @@ public sealed class SqlEditor : TextEditor
         TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
     }
 
-    /// <summary>Gets or sets the SQL dialect (statement splitting, completion, formatting).</summary>
-    public DatabaseProvider Provider { get; set; } = DatabaseProvider.PostgreSql;
+    /// <summary>Gets or sets the SQL dialect (statement splitting, completion, formatting); MongoDB switches to shell highlighting.</summary>
+    public DatabaseProvider Provider
+    {
+        get => _provider;
+        set
+        {
+            _provider = value;
+            SyntaxHighlighting = value == DatabaseProvider.MongoDb ? MongoHighlighting : Highlighting;
+        }
+    }
 
     /// <summary>Gets or sets the source of the catalog completion draws from.</summary>
     public Func<DatabaseCatalog?>? CatalogSource { get; set; }
@@ -183,6 +193,21 @@ public sealed class SqlEditor : TextEditor
             }
 
             return _highlighting;
+        }
+    }
+
+    private static IHighlightingDefinition MongoHighlighting
+    {
+        get
+        {
+            if (_mongoHighlighting is null)
+            {
+                using var stream = AssetLoader.Open(new Uri("avares://bengine-studio/Assets/MongoShell.xshd"));
+                using var reader = XmlReader.Create(stream);
+                _mongoHighlighting = HighlightingLoader.Load(reader, HighlightingManager.Instance);
+            }
+
+            return _mongoHighlighting;
         }
     }
 
@@ -401,6 +426,7 @@ public sealed class SqlEditor : TextEditor
         ["selc"] = "SELECT COUNT(*) FROM ${table} ${alias} WHERE ${alias}.${END};",
         ["lim"] = "SELECT * FROM ${table} LIMIT ${100}${END};",
         ["top"] = "SELECT TOP ${100} * FROM ${table}${END};",
+        ["fetch"] = "SELECT * FROM ${table} FETCH FIRST ${100} ROWS ONLY${END};",
         ["ins"] = "INSERT INTO ${table} (${columns}) VALUES (${values}${END});",
         ["upd"] = "UPDATE ${table} SET ${column} = ${value} WHERE ${END};",
         ["del"] = "DELETE FROM ${table} WHERE ${END};",
@@ -408,6 +434,19 @@ public sealed class SqlEditor : TextEditor
         ["col"] = "${column} ${type} ${NULL}${END}",
         ["view"] = "CREATE VIEW ${view} AS SELECT * FROM ${table}${END};",
         ["cnt"] = "SELECT COUNT(*) FROM ${table}${END};",
+    };
+
+    // The same abbreviations for the MongoDB shell.
+    private static readonly Dictionary<string, string> MongoTemplates = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["sel"] = "db.${collection}.find({${END}})",
+        ["lim"] = "db.${collection}.find({${END}}).limit(${100})",
+        ["agg"] = "db.${collection}.aggregate([\n    { $match: {${END}} }\n])",
+        ["ins"] = "db.${collection}.insertOne({${END}})",
+        ["upd"] = "db.${collection}.updateOne({${filter}}, { $set: {${END}} })",
+        ["del"] = "db.${collection}.deleteOne({${END}})",
+        ["cnt"] = "db.${collection}.countDocuments({${END}})",
+        ["idx"] = "db.${collection}.createIndex({ ${field}: 1${END} })",
     };
 
     private bool TryExpandTemplate()
@@ -420,14 +459,15 @@ public sealed class SqlEditor : TextEditor
         }
 
         var word = Document.GetText(start, caret - start);
-        if (word.Length == 0 || !Templates.TryGetValue(word, out var template) || (start > 0 && Document.GetCharAt(start - 1) is '.' or '_'))
+        var templates = Provider == DatabaseProvider.MongoDb ? MongoTemplates : Templates;
+        if (word.Length == 0 || !templates.TryGetValue(word, out var template) || (start > 0 && Document.GetCharAt(start - 1) is '.' or '_'))
         {
             return false;
         }
 
-        if (Provider == DatabaseProvider.SqlServer && word.Equals("lim", StringComparison.OrdinalIgnoreCase))
+        if (word.Equals("lim", StringComparison.OrdinalIgnoreCase) && Provider is DatabaseProvider.SqlServer or DatabaseProvider.Oracle)
         {
-            template = Templates["top"];
+            template = Templates[Provider == DatabaseProvider.SqlServer ? "top" : "fetch"];
         }
 
         var snippet = new Snippet();

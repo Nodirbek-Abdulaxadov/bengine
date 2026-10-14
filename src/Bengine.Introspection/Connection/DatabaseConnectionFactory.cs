@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Data.SqlClient;
 using MySqlConnector;
 using Npgsql;
+using Oracle.ManagedDataAccess.Client;
 
 /// <summary>
 /// Creates the concrete ADO.NET <see cref="DbConnection"/> for a
@@ -26,6 +27,7 @@ public static class DatabaseConnectionFactory
         DatabaseProvider.SqlServer => new SqlConnection(connectionString),
         DatabaseProvider.MySql => new MySqlConnection(connectionString),
         DatabaseProvider.Sqlite => new SqliteConnection(connectionString),
+        DatabaseProvider.Oracle => new OracleConnection(connectionString),
         _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, "Unknown database provider."),
     };
 
@@ -48,6 +50,7 @@ public static class DatabaseConnectionFactory
             // surface as an IntrospectionException, not an unhandled 500.
             connection = Create(provider, connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await OracleSupport.InitializeAsync(connection, cancellationToken).ConfigureAwait(false);
             return connection;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

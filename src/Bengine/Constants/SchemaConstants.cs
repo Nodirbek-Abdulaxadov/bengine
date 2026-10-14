@@ -10,9 +10,9 @@ using Bengine.Enums;
 /// </summary>
 public static class SchemaConstants
 {
-    /// <summary>Gets the set of every supported <see cref="DatabaseProvider"/>.</summary>
+    /// <summary>Gets the set of every SQL <see cref="DatabaseProvider"/> the generators target (all but MongoDB).</summary>
     public static FrozenSet<DatabaseProvider> AllProviders { get; } =
-        Enum.GetValues<DatabaseProvider>().ToFrozenSet();
+        Enum.GetValues<DatabaseProvider>().Where(p => p != DatabaseProvider.MongoDb).ToFrozenSet();
 
     /// <summary>Gets the set of every supported <see cref="Language"/>.</summary>
     public static FrozenSet<Language> AllLanguages { get; } =

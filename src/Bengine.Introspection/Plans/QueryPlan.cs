@@ -98,7 +98,8 @@ public sealed class QueryPlan
                 || node.Operation.Equals("Table Scan", StringComparison.OrdinalIgnoreCase)
                 || node.Operation.Equals("Clustered Index Scan", StringComparison.OrdinalIgnoreCase)
                 || node.Operation.StartsWith("SCAN ", StringComparison.OrdinalIgnoreCase)
-                || node.Operation.Equals("ALL", StringComparison.OrdinalIgnoreCase);
+                || node.Operation.Equals("ALL", StringComparison.OrdinalIgnoreCase)
+                || node.Operation.Equals("TABLE ACCESS FULL", StringComparison.OrdinalIgnoreCase);
             if (scan && rows * (node.Loops ?? 1) >= 1000)
             {
                 node.Warnings.Add($"Full scan of {rows * (node.Loops ?? 1):N0} rows — an index on the filtered columns may help.");

@@ -42,6 +42,11 @@ public static class SqlFormatter
     /// <returns>The formatted script.</returns>
     public static string Format(string sql, DatabaseProvider provider, bool upperCaseKeywords = true)
     {
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return sql;
+        }
+
         var statements = SqlScript.Split(sql, provider);
         var builder = new StringBuilder(sql);
         foreach (var statement in statements.Reverse())
@@ -60,6 +65,11 @@ public static class SqlFormatter
     /// <returns>The formatted statement.</returns>
     public static string FormatStatement(string sql, DatabaseProvider provider, bool upperCaseKeywords = true)
     {
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return sql.Trim();
+        }
+
         var lexemes = SqlLexer.Lex(sql, provider).Where(l => l.Kind != SqlLexemeKind.Whitespace).ToList();
 
         // Routine bodies and other procedural code are left alone: re-flowing them

@@ -43,6 +43,11 @@ public static class SqlInspector
     public static IReadOnlyList<InspectionFinding> Inspect(string text, DatabaseCatalog catalog, bool readOnly = false)
     {
         var provider = catalog.Provider;
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return [];
+        }
+
         var findings = new List<InspectionFinding>();
         var lexemes = SqlLexer.Lex(text, provider);
 

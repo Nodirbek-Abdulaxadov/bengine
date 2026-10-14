@@ -8,9 +8,11 @@ using Bengine.Introspection.Catalog;
 using Bengine.Introspection.Data;
 using Bengine.Introspection.Export;
 using Bengine.Introspection.Model;
+using Bengine.Introspection.Mongo;
 using Bengine.Introspection.Servers;
 using Bengine.Introspection.Sql;
 using CommunityToolkit.Mvvm.ComponentModel;
+using MongoDB.Bson;
 using CommunityToolkit.Mvvm.Input;
 
 /// <summary>What a data editor needs from the explorer.</summary>
@@ -101,6 +103,35 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
     /// <summary>Gets the provider.</summary>
     public DatabaseProvider Provider => Server.Provider;
 
+    /// <summary>Gets whether the tab shows a MongoDB collection: its filter and sort are documents, and a row is a document.</summary>
+    public bool IsMongo => Provider == DatabaseProvider.MongoDb;
+
+    /// <summary>Gets the caption of the filter box.</summary>
+    public string WhereLabel => IsMongo ? "FILTER" : "WHERE";
+
+    /// <summary>Gets the caption of the ordering box.</summary>
+    public string OrderByLabel => IsMongo ? "SORT" : "ORDER BY";
+
+    /// <summary>Gets the filter box's watermark.</summary>
+    public string WhereHint => IsMongo
+        ? "query document, e.g. {status: \"active\", age: {$gt: 30}}"
+        : "condition, e.g. status = 'active' AND created_at > now() - interval '7 days'";
+
+    /// <summary>Gets the ordering box's watermark.</summary>
+    public string OrderByHint => IsMongo ? "e.g. {created: -1}" : "e.g. id DESC";
+
+    /// <summary>Gets the label of the "write as inserts" formats.</summary>
+    public string InsertLabel => IsMongo ? "insertMany" : "SQL INSERT";
+
+    /// <summary>Gets the label of the "write as updates" format.</summary>
+    public string UpdateLabel => IsMongo ? "updateOne" : "SQL UPDATE";
+
+    /// <summary>Gets the label of the "rows as a condition" format.</summary>
+    public string ConditionLabel => IsMongo ? "Filter document" : "WHERE condition";
+
+    /// <summary>Gets the label of the DEFAULT action (MongoDB removes the field).</summary>
+    public string DefaultLabel => IsMongo ? "Unset Field" : "Set DEFAULT";
+
     /// <inheritdoc />
     public override string Title => Table.Name + (PendingCount > 0 ? " *" : string.Empty);
 
@@ -157,7 +188,7 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
             if (await _context.Catalog(false) is { } catalog)
             {
                 _relation = catalog.Find(Table.Schema, Table.Name);
-                _primaryKey = _relation?.Columns.Where(c => c.IsPrimaryKey).Select(c => c.Name).ToList() ?? [];
+                _primaryKey = IsMongo ? ["_id"] : _relation?.Columns.Where(c => c.IsPrimaryKey).Select(c => c.Name).ToList() ?? [];
                 _incoming = _relation is null ? [] : catalog.Incoming(_relation).ToList();
                 _outgoing = _relation is null ? [] : catalog.Outgoing(_relation).ToList();
             }
@@ -165,6 +196,12 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
         catch (IntrospectionException ex)
         {
             Status = $"Metadata unavailable ({ex.Message}); edits use every column as the row key.";
+        }
+
+        if (IsMongo)
+        {
+            // A document is identified by its _id, whatever the catalog says.
+            _primaryKey = ["_id"];
         }
 
         await RunAsync(LoadPageAsync);
@@ -263,6 +300,12 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
     /// <returns>A task that completes when the page is reloaded.</returns>
     public Task FilterByValueAsync(RowItem row, int column, string op)
     {
+        if (IsMongo)
+        {
+            WhereText = MongoFilter(WhereText, Columns[column], op, Convert(column, row.CurrentValue(column)));
+            return ApplyFilterAsync();
+        }
+
         var name = SqlKeywords.QuoteIfNeeded(Columns[column], Provider);
         var value = row.CurrentValue(column);
         var condition = value is null
@@ -278,6 +321,14 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
     /// <returns>A task that completes when the page is reloaded.</returns>
     public Task SortByAsync(string column)
     {
+        if (IsMongo)
+        {
+            var key = MongoValues.Key(column);
+            var current = OrderByText.Replace(" ", string.Empty, StringComparison.Ordinal);
+            OrderByText = current == $"{{{key}:1}}" ? $"{{{key}: -1}}" : current == $"{{{key}:-1}}" ? string.Empty : $"{{{key}: 1}}";
+            return ApplyFilterAsync();
+        }
+
         var name = SqlKeywords.QuoteIfNeeded(column, Provider);
         OrderByText = OrderByText.Trim() == $"{name} ASC" ? $"{name} DESC" : OrderByText.Trim() == $"{name} DESC" ? string.Empty : $"{name} ASC";
         return ApplyFilterAsync();
@@ -295,7 +346,9 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
         Watch(row);
         Rows.Insert(0, row);
         SelectedRow = row;
-        Status = "New row added — fill it in, then Submit (Ctrl+Enter). Untouched cells take their DEFAULT.";
+        Status = IsMongo
+            ? "New document added — fill it in, then Submit (Ctrl+Enter). Untouched fields are left out; an empty _id is generated."
+            : "New row added — fill it in, then Submit (Ctrl+Enter). Untouched cells take their DEFAULT.";
         IsError = false;
     }
 
@@ -308,7 +361,7 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
         }
 
         // Generated keys (identity, serial, autoincrement) are left to the database.
-        var generated = _relation?.Columns.Where(c => c.IsPrimaryKey && c.HasDefault || c.IsGenerated).Select(c => c.Name) ?? [];
+        var generated = IsMongo ? ["_id"] : _relation?.Columns.Where(c => c.IsPrimaryKey && c.HasDefault || c.IsGenerated).Select(c => c.Name) ?? [];
         var row = RowItem.CloneOf(source, generated);
         Watch(row);
         Rows.Insert(Rows.IndexOf(source) + 1, row);
@@ -393,7 +446,7 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
             return;
         }
 
-        var sql = string.Join(Environment.NewLine, RelationalDataWriter.Preview(Provider, Table, changes));
+        var sql = string.Join(Environment.NewLine, IsMongo ? MongoDataWriter.Preview(Table, changes) : RelationalDataWriter.Preview(Provider, Table, changes));
         if (_context.Dialogs is not null && await _context.Dialogs.ReviewSqlAsync($"Pending Changes — {Table.QualifiedName}", sql, "Submit"))
         {
             await SubmitAsync();
@@ -477,6 +530,11 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
         rows ??= _selection.Count > 0 ? _selection : Rows.ToList();
         var values = rows.Select(r => r.CurrentValues()).ToList();
         var columns = Columns.ToList();
+        if (IsMongo && format is "json" or "sql-insert" or "sql-update" or "where")
+        {
+            return MongoFormat(format, rows, columns);
+        }
+
         return format switch
         {
             "tsv" => DataExporter.ToTsv(columns, values),
@@ -505,7 +563,12 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
         await RunAsync(async session =>
         {
             var page = await session.Data.QueryAsync(Table, Query(page: 1, pageSize: DataQuery.MaxPageSize, count: false));
-            if (format == "xlsx")
+            if (IsMongo && format is "json" or "sql-insert")
+            {
+                var documents = page.Rows.Select(r => Document(page.Columns, r)).ToList();
+                await File.WriteAllTextAsync(path, format == "json" ? MongoJson(documents) : MongoInserts(documents));
+            }
+            else if (format == "xlsx")
             {
                 await File.WriteAllBytesAsync(path, XlsxWriter.Write(Table.Name, page.Columns, page.Rows));
             }
@@ -701,6 +764,12 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
             return value;
         }
 
+        // MongoDB: typed text becomes the BSON type the column holds (a document, an ObjectId, a date…).
+        if (IsMongo)
+        {
+            return MongoValues.FromText(text, ColumnTypes[column]);
+        }
+
         var type = ColumnTypes[column].Split('(')[0].Trim();
         return NumericTypes.Any(n => type.Equals(n, StringComparison.OrdinalIgnoreCase))
             && decimal.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var number)
@@ -709,6 +778,83 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
     }
 
     private string Literal(int column, object value) => SqlLiterals.Format(Convert(column, value is string s ? s : value), Provider);
+
+    // Adds "field op value" to a MongoDB filter document.
+    private static string MongoFilter(string existing, string field, string op, object? value)
+    {
+        var bson = MongoValues.ToBson(value);
+        BsonValue test = op switch
+        {
+            "<>" => new BsonDocument("$ne", bson),
+            "<" => new BsonDocument("$lt", bson),
+            ">" => new BsonDocument("$gt", bson),
+            "LIKE" => new BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(RowItem.Format(value)), "i"),
+            _ => bson,
+        };
+        var condition = new BsonDocument(field, test);
+        if (string.IsNullOrWhiteSpace(existing))
+        {
+            return MongoValues.Shell(condition);
+        }
+
+        var trimmed = existing.Trim();
+        if (MongoValues.TryParseValue(trimmed.StartsWith('{') ? trimmed : "{" + trimmed + "}", out var parsed) && parsed is BsonDocument current)
+        {
+            if (!current.Contains(field))
+            {
+                current.Add(field, test);
+                return MongoValues.Shell(current);
+            }
+
+            return MongoValues.Shell(new BsonDocument("$and", new BsonArray { current, condition }));
+        }
+
+        return MongoValues.Shell(condition);
+    }
+
+    // A row as the document it shows: missing (null) fields are left out.
+    private static BsonDocument Document(IReadOnlyList<string> columns, IReadOnlyList<object?> values)
+    {
+        var document = new BsonDocument();
+        for (var i = 0; i < columns.Count && i < values.Count; i++)
+        {
+            if (values[i] is not null and not SqlDefault)
+            {
+                document[columns[i]] = MongoValues.ToBson(values[i]);
+            }
+        }
+
+        return document;
+    }
+
+    private static string MongoJson(IReadOnlyList<BsonDocument> documents)
+    {
+        var settings = new MongoDB.Bson.IO.JsonWriterSettings { OutputMode = MongoDB.Bson.IO.JsonOutputMode.RelaxedExtendedJson, Indent = true };
+        return "[\n" + string.Join(",\n", documents.Select(d => d.ToJson(settings))) + "\n]\n";
+    }
+
+    private string MongoInserts(IReadOnlyList<BsonDocument> documents) =>
+        $"{MongoShell.Collection(Table.Name)}.insertMany([\n  " + string.Join(",\n  ", documents.Select(MongoValues.Shell)) + "\n]);\n";
+
+    private string MongoFormat(string format, IReadOnlyList<RowItem> rows, List<string> columns)
+    {
+        var documents = rows.Select(r => Document(columns, Enumerable.Range(0, columns.Count).Select(i => Convert(i, r.CurrentValue(i))).ToList())).ToList();
+        switch (format)
+        {
+            case "json":
+                return MongoJson(documents);
+            case "sql-insert":
+                return MongoInserts(documents);
+            case "sql-update":
+                return string.Join(Environment.NewLine, MongoDataWriter.Preview(Table, rows
+                    .Select(r => RowChange.Update(KeyOf(r), columns.Select((c, i) => (c, i)).Where(x => x.c != "_id")
+                        .ToDictionary(x => x.c, x => Convert(x.i, r.CurrentValue(x.i)))))
+                    .ToList())) + Environment.NewLine;
+            default:
+                var ids = rows.Select(r => MongoValues.ToBson(KeyOf(r).GetValueOrDefault("_id"))).ToList();
+                return MongoValues.Shell(ids.Count == 1 ? new BsonDocument("_id", ids[0]) : new BsonDocument("_id", new BsonDocument("$in", new BsonArray(ids))));
+        }
+    }
 
     private IReadOnlyList<ForeignKeyLink> LinksFor(string column)
     {

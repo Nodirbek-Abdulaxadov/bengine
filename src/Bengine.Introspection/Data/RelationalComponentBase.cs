@@ -48,6 +48,7 @@ public abstract class RelationalComponentBase
     {
         var command = Connection.CreateCommand();
         command.Transaction = CurrentTransaction;
+        Bengine.Introspection.Connection.OracleSupport.Prepare(command);
         return command;
     }
 
@@ -105,9 +106,9 @@ public abstract class RelationalComponentBase
     /// <param name="parameters">The accumulating parameter list.</param>
     /// <param name="value">The value to bind (<c>null</c> becomes <c>DBNull</c>).</param>
     /// <returns>The <c>@pN</c> placeholder.</returns>
-    protected static string AddParameter(List<(string Name, object Value)> parameters, object? value)
+    protected string AddParameter(List<(string Name, object Value)> parameters, object? value)
     {
-        var name = "@p" + parameters.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var name = (Provider == DatabaseProvider.Oracle ? ":p" : "@p") + parameters.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
         parameters.Add((name, value ?? DBNull.Value));
         return name;
     }
@@ -123,7 +124,7 @@ public abstract class RelationalComponentBase
         foreach (var (name, value) in parameters)
         {
             var parameter = command.CreateParameter();
-            parameter.ParameterName = name;
+            parameter.ParameterName = Bengine.Introspection.Connection.OracleSupport.ParameterName(command, name);
             parameter.Value = value;
 
             // Values typed in a UI arrive as text. Bound as `text`, PostgreSQL
@@ -212,6 +213,7 @@ public abstract class RelationalComponentBase
     {
         DatabaseProvider.MySql => $"CAST({quotedColumn} AS CHAR)",
         DatabaseProvider.SqlServer => $"CAST({quotedColumn} AS NVARCHAR(MAX))",
+        DatabaseProvider.Oracle => $"TO_CHAR({quotedColumn})",
         _ => $"CAST({quotedColumn} AS TEXT)",
     };
 }

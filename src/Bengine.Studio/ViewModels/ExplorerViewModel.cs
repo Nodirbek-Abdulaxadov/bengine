@@ -461,12 +461,12 @@ public sealed partial class ExplorerViewModel : ObservableObject
     /// <summary>Gets whether a node can be dropped.</summary>
     /// <param name="item">The row.</param>
     /// <returns><c>true</c> if a Drop action applies.</returns>
-    public static bool CanDrop(TreeItemViewModel item) => item.Node is { } node && !node.Ref.IsFolder && ObjectSql.CanDrop(node.Ref.Kind);
+    public static bool CanDrop(TreeItemViewModel item) => item.Node is { } node && !node.Ref.IsFolder && item.Server is { } server && ObjectSql.CanDrop(server.Provider, node.Ref.Kind);
 
     /// <summary>Gets whether a node can be renamed.</summary>
     /// <param name="item">The row.</param>
     /// <returns><c>true</c> if a Rename action applies.</returns>
-    public static bool CanRename(TreeItemViewModel item) => item.Node is { } node && !node.Ref.IsFolder && ObjectSql.CanRename(node.Ref.Kind);
+    public static bool CanRename(TreeItemViewModel item) => item.Node is { } node && !node.Ref.IsFolder && item.Server is { } server && ObjectSql.CanRename(server.Provider, node.Ref.Kind);
 
     /// <summary>Drops an object after showing its statement.</summary>
     /// <param name="item">The row.</param>
@@ -479,7 +479,12 @@ public sealed partial class ExplorerViewModel : ObservableObject
     /// <param name="item">The row.</param>
     /// <returns>A task that completes when done.</returns>
     public Task TruncateAsync(TreeItemViewModel item) =>
-        RunObjectSqlAsync(item, "Truncate Table", ObjectSql.Truncate(item.Server!.Provider, item.Node!.Ref), "Truncate", refreshParent: false);
+        RunObjectSqlAsync(
+            item,
+            item.Server!.Provider == Bengine.Enums.DatabaseProvider.MongoDb ? "Delete All Documents" : "Truncate Table",
+            ObjectSql.Truncate(item.Server.Provider, item.Node!.Ref),
+            item.Server.Provider == Bengine.Enums.DatabaseProvider.MongoDb ? "Delete" : "Truncate",
+            refreshParent: false);
 
     /// <summary>Renames an object.</summary>
     /// <param name="item">The row.</param>
@@ -568,7 +573,7 @@ public sealed partial class ExplorerViewModel : ObservableObject
     /// <summary>Gets whether Find Usages applies to a node (relations, routines, sequences, types).</summary>
     /// <param name="item">The row.</param>
     /// <returns><c>true</c> if usages can be searched.</returns>
-    public static bool CanFindUsages(TreeItemViewModel item) => item.Node?.Ref.Kind is NodeKind.Table or NodeKind.View or NodeKind.MaterializedView
+    public static bool CanFindUsages(TreeItemViewModel item) => item.Server?.Provider != Bengine.Enums.DatabaseProvider.MongoDb && item.Node?.Ref.Kind is NodeKind.Table or NodeKind.View or NodeKind.MaterializedView
         or NodeKind.ForeignTable or NodeKind.Function or NodeKind.Procedure or NodeKind.TriggerFunction or NodeKind.Sequence or NodeKind.Type or NodeKind.Domain;
 
     /// <summary>
@@ -755,6 +760,7 @@ public sealed partial class ExplorerViewModel : ObservableObject
             {
                 Bengine.Enums.DatabaseProvider.Sqlite => "INTEGER",
                 Bengine.Enums.DatabaseProvider.MySql or Bengine.Enums.DatabaseProvider.SqlServer => "int",
+                Bengine.Enums.DatabaseProvider.Oracle => "NUMBER(19)",
                 _ => "bigint",
             },
             PrimaryKey = true,
@@ -769,6 +775,42 @@ public sealed partial class ExplorerViewModel : ObservableObject
                 ?? item.Children.SelectMany(c => c.Children).FirstOrDefault(c => c.Kind == "TablesFolder");
             await (folder?.RefreshAsync() ?? item.RefreshAsync());
             _ = GetCatalogAsync(server, r.Database, refresh: true);
+        }
+    }
+
+    /// <summary>Creates a MongoDB collection in a database, asking for its name.</summary>
+    /// <param name="item">The database or Collections folder row.</param>
+    /// <returns>A task that completes when done.</returns>
+    public async Task NewCollectionAsync(TreeItemViewModel item)
+    {
+        if (item.Server is not { } server || item.Node?.Ref is not { Database: { } database } || Dialogs is null)
+        {
+            return;
+        }
+
+        if (server.ReadOnly)
+        {
+            Status = $"\"{server.Name}\" is read-only.";
+            return;
+        }
+
+        if (await Dialogs.PromptAsync("New Collection", $"Name of the new collection in {database}:", "new_collection") is not { Length: > 0 } name)
+        {
+            return;
+        }
+
+        try
+        {
+            await using var session = await OpenSessionAsync(server, database);
+            await session.Query.ExecuteAllAsync($"db.createCollection({Bengine.Introspection.Mongo.MongoValues.Quote(name.Trim())})");
+            Status = $"Collection {name.Trim()} created.";
+            var folder = item.Kind == "TablesFolder" ? item : item.Children.FirstOrDefault(c => c.Kind == "TablesFolder");
+            await (folder?.RefreshAsync() ?? item.RefreshAsync());
+            _ = GetCatalogAsync(server, database, refresh: true);
+        }
+        catch (IntrospectionException ex)
+        {
+            Status = ex.Message;
         }
     }
 
@@ -813,9 +855,10 @@ public sealed partial class ExplorerViewModel : ObservableObject
     /// <returns>The tab.</returns>
     public async Task<SchemaCompareViewModel> OpenCompareAsync(TreeItemViewModel? item = null)
     {
-        var compare = new SchemaCompareViewModel(this, _store.List());
+        // Comparisons are relational; MongoDB has no schema to diff.
+        var compare = new SchemaCompareViewModel(this, _store.List().Where(s => s.Provider != Bengine.Enums.DatabaseProvider.MongoDb).ToList());
         AddTab(compare);
-        if (item is { Server: { } server, Node.Ref: var r })
+        if (item is { Server: { Provider: not Bengine.Enums.DatabaseProvider.MongoDb } server, Node.Ref: var r })
         {
             await compare.Source.SelectAsync(server, r.Database, r.Kind == NodeKind.Schema ? r.Name : null);
             await compare.Target.SelectAsync(server, r.Database, r.Kind == NodeKind.Schema ? r.Name : null);
@@ -829,9 +872,9 @@ public sealed partial class ExplorerViewModel : ObservableObject
     /// <returns>The tab.</returns>
     public async Task<DataCompareViewModel> OpenDataCompareAsync(TreeItemViewModel? item = null)
     {
-        var compare = new DataCompareViewModel(this, _store.List());
+        var compare = new DataCompareViewModel(this, _store.List().Where(s => s.Provider != Bengine.Enums.DatabaseProvider.MongoDb).ToList());
         AddTab(compare);
-        if (item is { Server: { } server, Node.Ref: { Name: { } name } r })
+        if (item is { Server: { Provider: not Bengine.Enums.DatabaseProvider.MongoDb } server, Node.Ref: { Name: { } name } r })
         {
             await compare.Source.SelectAsync(server, r.Database, r.Schema, name);
             await compare.Target.SelectAsync(server, r.Database, r.Schema, name);
@@ -1039,7 +1082,7 @@ public sealed partial class ExplorerViewModel : ObservableObject
         }
 
         _sessionPasswords.Remove(server.Id);
-        Bengine.Introspection.Connection.SshTunnels.Close(server.Id);
+        ObjectExplorer.Disconnect(server.Id);
         foreach (var key in _catalogs.Keys.Where(k => k.StartsWith(server.Id + "|", StringComparison.Ordinal)).ToList())
         {
             _catalogs.Remove(key);

@@ -156,6 +156,14 @@ public static class DataGripImporter
     {
         profile = null;
         reason = null;
+
+        // DataGrip's MongoDB data sources carry a plain mongodb:// URL.
+        var mongo = url.StartsWith("jdbc:mongodb", StringComparison.OrdinalIgnoreCase) ? url[5..] : url;
+        if (mongo.StartsWith("mongodb://", StringComparison.OrdinalIgnoreCase) || mongo.StartsWith("mongodb+srv://", StringComparison.OrdinalIgnoreCase))
+        {
+            return TryMapMongo(name, group, mongo, user, out profile, out reason);
+        }
+
         if (!url.StartsWith("jdbc:", StringComparison.OrdinalIgnoreCase))
         {
             reason = "Not a JDBC URL.";
@@ -192,6 +200,9 @@ public static class DataGripImporter
                 return true;
             }
 
+            case "oracle":
+                return TryMapOracle(name, group, body, user, out profile, out reason);
+
             case "sqlite":
             {
                 var path = body["sqlite:".Length..].Split('?', 2)[0];
@@ -209,6 +220,89 @@ public static class DataGripImporter
                 reason = $"Unsupported driver ({scheme}).";
                 return false;
         }
+    }
+
+    // mongodb://[user@]host:port/db?options: one plain host becomes host and port; SRV and replica-set URLs are kept whole.
+    private static bool TryMapMongo(string name, string group, string url, string? user, out ServerProfile? profile, out string? reason)
+    {
+        profile = null;
+        reason = null;
+        MongoDB.Driver.MongoUrl parsed;
+        try
+        {
+            parsed = MongoDB.Driver.MongoUrl.Create(url);
+        }
+        catch (Exception ex) when (ex is MongoDB.Driver.MongoConfigurationException or ArgumentException or FormatException)
+        {
+            reason = $"Invalid MongoDB URL ({ex.Message}).";
+            return false;
+        }
+
+        var login = user ?? parsed.Username;
+        var authentication = parsed.AuthenticationSource ?? (string.IsNullOrEmpty(parsed.DatabaseName) ? "admin" : parsed.DatabaseName);
+        var single = parsed.Scheme == MongoDB.Driver.Core.Configuration.ConnectionStringScheme.MongoDB && parsed.Servers.Count() == 1;
+        if (single)
+        {
+            // The URL's options (other than credentials and the auth database) carry over.
+            var query = url.IndexOf('?', StringComparison.Ordinal) is var q and >= 0 ? url[(q + 1)..] : string.Empty;
+            var options = string.Join('\n', query.Split('&', StringSplitOptions.RemoveEmptyEntries).Where(o => !o.StartsWith("authSource=", StringComparison.OrdinalIgnoreCase)));
+            profile = Network(name, group, DatabaseProvider.MongoDb, parsed.Server.Host, parsed.Server.Port, authentication, login, options.Length == 0 ? null : options);
+        }
+        else
+        {
+            // Without the credentials: those come from the registration.
+            var builder = new MongoDB.Driver.MongoUrlBuilder(url) { Username = null, Password = null };
+            profile = new ServerProfile { Name = name, Group = group, Provider = DatabaseProvider.MongoDb, Host = builder.ToString(), MaintenanceDatabase = authentication, Username = login };
+        }
+
+        return true;
+    }
+
+    // jdbc:oracle:thin:[user/pass]@//host:port/service, @host:port:SID, or @(DESCRIPTION=…); a TNS alias cannot be resolved here.
+    private static bool TryMapOracle(string name, string group, string body, string? user, out ServerProfile? profile, out string? reason)
+    {
+        profile = null;
+        reason = null;
+        var at = body.IndexOf('@', StringComparison.Ordinal);
+        if (at < 0)
+        {
+            reason = "No host in the Oracle URL.";
+            return false;
+        }
+
+        var target = body[(at + 1)..].Trim();
+        string? host;
+        int? port = null;
+        string? service;
+        if (target.StartsWith('('))
+        {
+            string? Value(string key) => System.Text.RegularExpressions.Regex.Match(target, key + @"\s*=\s*([^)\s]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) is { Success: true } m ? m.Groups[1].Value : null;
+            host = Value("HOST");
+            port = int.TryParse(Value("PORT"), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var p) ? p : null;
+            service = Value("SERVICE_NAME") ?? Value("SID");
+        }
+        else
+        {
+            target = target.TrimStart('/').Split('?', 2)[0];
+            var slash = target.IndexOf('/', StringComparison.Ordinal);
+            var parts = (slash >= 0 ? target[..slash] : target).Split(':');
+            host = parts[0];
+            if (parts.Length > 1 && int.TryParse(parts[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var p))
+            {
+                port = p;
+            }
+
+            service = slash >= 0 ? target[(slash + 1)..] : parts.Length > 2 ? parts[2] : null;
+        }
+
+        if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(service))
+        {
+            reason = "Oracle TNS alias or incomplete URL (set host, port, and service by hand).";
+            return false;
+        }
+
+        profile = Network(name, group, DatabaseProvider.Oracle, host, port, service, user, null);
+        return true;
     }
 
     private static ServerProfile Network(string name, string group, DatabaseProvider provider, string host, int? port, string? database, string? user, string? options) => new()

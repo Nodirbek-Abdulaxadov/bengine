@@ -3,6 +3,9 @@ namespace Bengine.Introspection.Activity;
 using System.Globalization;
 using Bengine.Enums;
 using Bengine.Introspection.Model;
+using Bengine.Introspection.Mongo;
+using MongoDB.Bson;
+using MongoDB.Driver;
 
 /// <summary>One connection to the server, as its activity view shows it.</summary>
 public sealed record ActivitySession
@@ -58,7 +61,9 @@ public sealed record ActivityLock(string Session, string? Object, string Mode, b
 /// actions to cancel a running statement or end a session — for PostgreSQL
 /// (<c>pg_stat_activity</c>, <c>pg_locks</c>), MySQL and MariaDB (process
 /// list, <c>performance_schema.data_locks</c>), and SQL Server
-/// (<c>sys.dm_exec_sessions</c>/<c>requests</c>, <c>sys.dm_tran_locks</c>).
+/// (<c>sys.dm_exec_sessions</c>/<c>requests</c>, <c>sys.dm_tran_locks</c>),
+/// Oracle (<c>v$session</c>, <c>v$lock</c>), and MongoDB (<c>currentOp</c>,
+/// <c>killOp</c>; operations stand in for sessions and locks are not listed).
 /// SQLite has no server, so it has no activity.
 /// </summary>
 public static class ServerActivity
@@ -74,6 +79,11 @@ public static class ServerActivity
     /// <returns>The sessions, longest-running first.</returns>
     public static async Task<IReadOnlyList<ActivitySession>> SessionsAsync(DatabaseSession session, CancellationToken cancellationToken = default)
     {
+        if (session.Mongo is { } mongo)
+        {
+            return await MongoSessionsAsync(mongo, cancellationToken).ConfigureAwait(false);
+        }
+
         var sql = session.Provider switch
         {
             DatabaseProvider.PostgreSql => """
@@ -98,6 +108,19 @@ public static class ServerActivity
                 LEFT JOIN sys.dm_exec_requests r ON r.session_id = s.session_id
                 OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) t
                 WHERE s.is_user_process = 1
+                """,
+
+            // Oracle: needs SELECT on V$SESSION and V$SQL (SELECT_CATALOG_ROLE); ids are "sid,serial#".
+            DatabaseProvider.Oracle => """
+                SELECT s.sid || ',' || s.serial#, s.username, s.schemaname, s.machine, s.program,
+                       CASE s.status WHEN 'INACTIVE' THEN 'idle' ELSE 'active' END || CASE WHEN s.taddr IS NOT NULL THEN ' in transaction' END,
+                       s.last_call_et,
+                       CASE WHEN s.wait_class <> 'Idle' THEN s.wait_class || ': ' || s.event END,
+                       q.sql_text,
+                       (SELECT b.sid || ',' || b.serial# FROM v$session b WHERE b.sid = s.blocking_session),
+                       CASE WHEN s.sid = SYS_CONTEXT('USERENV', 'SID') THEN 't' ELSE 'f' END
+                FROM v$session s LEFT JOIN v$sql q ON q.sql_id = s.sql_id AND q.child_number = s.sql_child_number
+                WHERE s.type = 'USER'
                 """,
             _ => null,
         };
@@ -169,6 +192,11 @@ public static class ServerActivity
     /// <returns>The locks, awaited ones first.</returns>
     public static async Task<IReadOnlyList<ActivityLock>> LocksAsync(DatabaseSession session, CancellationToken cancellationToken = default)
     {
+        if (session.Provider == DatabaseProvider.MongoDb)
+        {
+            return [];
+        }
+
         var sql = session.Provider switch
         {
             DatabaseProvider.PostgreSql => """
@@ -187,6 +215,16 @@ public static class ServerActivity
                             ELSE l.resource_type + ' ' + l.resource_description END,
                        l.request_mode, CAST(CASE WHEN l.request_status = 'GRANT' THEN 1 ELSE 0 END AS bit)
                 FROM sys.dm_tran_locks l WHERE l.request_session_id <> @@SPID AND l.resource_type <> 'DATABASE'
+                """,
+            DatabaseProvider.Oracle => """
+                SELECT s.sid || ',' || s.serial#, o.owner || '.' || o.object_name,
+                       DECODE(l.locked_mode, 1, 'NULL', 2, 'ROW SHARE', 3, 'ROW EXCLUSIVE', 4, 'SHARE', 5, 'SHARE ROW EXCLUSIVE', 6, 'EXCLUSIVE', 'NONE'), 't'
+                FROM v$locked_object l JOIN all_objects o ON o.object_id = l.object_id JOIN v$session s ON s.sid = l.session_id
+                WHERE l.session_id <> SYS_CONTEXT('USERENV', 'SID')
+                UNION ALL
+                SELECT s.sid || ',' || s.serial#, o.owner || '.' || o.object_name, 'waiting', 'f'
+                FROM v$session s LEFT JOIN all_objects o ON o.object_id = s.row_wait_obj#
+                WHERE s.blocking_session IS NOT NULL
                 """,
             _ => null,
         };
@@ -215,12 +253,14 @@ public static class ServerActivity
     /// <param name="id">The target session's id.</param>
     /// <param name="cancellationToken">Cancels the request.</param>
     /// <returns>A task that completes when the server accepted the request.</returns>
-    public static Task CancelAsync(DatabaseSession session, string id, CancellationToken cancellationToken = default) =>
-        session.Query.ExecuteAllAsync(session.Provider switch
+    public static Task CancelAsync(DatabaseSession session, string id, CancellationToken cancellationToken = default) => session.Mongo is { } mongo
+        ? KillOpAsync(mongo, id, cancellationToken)
+        : session.Query.ExecuteAllAsync(session.Provider switch
         {
             DatabaseProvider.PostgreSql => $"SELECT pg_cancel_backend({Number(id)})",
             DatabaseProvider.MySql => $"KILL QUERY {Number(id)}",
             DatabaseProvider.SqlServer => $"KILL {Number(id)}",
+            DatabaseProvider.Oracle => $"ALTER SYSTEM CANCEL SQL '{OracleSession(id)}'",
             _ => throw new IntrospectionException("SQLite has no server sessions."),
         }, 1, cancellationToken);
 
@@ -229,13 +269,78 @@ public static class ServerActivity
     /// <param name="id">The target session's id.</param>
     /// <param name="cancellationToken">Cancels the request.</param>
     /// <returns>A task that completes when the server accepted the request.</returns>
-    public static Task TerminateAsync(DatabaseSession session, string id, CancellationToken cancellationToken = default) =>
-        session.Query.ExecuteAllAsync(session.Provider switch
+    /// <remarks>MongoDB cannot end another client's connection; its operation is killed instead.</remarks>
+    public static Task TerminateAsync(DatabaseSession session, string id, CancellationToken cancellationToken = default) => session.Mongo is { } mongo
+        ? KillOpAsync(mongo, id, cancellationToken)
+        : session.Query.ExecuteAllAsync(session.Provider switch
         {
             DatabaseProvider.PostgreSql => $"SELECT pg_terminate_backend({Number(id)})",
             DatabaseProvider.MySql or DatabaseProvider.SqlServer => $"KILL {Number(id)}",
+            DatabaseProvider.Oracle => $"ALTER SYSTEM KILL SESSION '{OracleSession(id)}' IMMEDIATE",
             _ => throw new IntrospectionException("SQLite has no server sessions."),
         }, 1, cancellationToken);
+
+    // MongoDB: client operations (idle connections included) from currentOp.
+    private static async Task<IReadOnlyList<ActivitySession>> MongoSessionsAsync(MongoConnection mongo, CancellationToken ct)
+    {
+        BsonDocument reply;
+        try
+        {
+            reply = await mongo.Admin.RunCommandAsync<BsonDocument>(new BsonDocument { { "currentOp", 1 }, { "$all", true } }, cancellationToken: ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is MongoException or TimeoutException)
+        {
+            throw new IntrospectionException(MongoConnection.Message(ex), ex);
+        }
+
+        static string? Field(BsonDocument document, string name) =>
+            document.GetValue(name, BsonNull.Value) is BsonString { Value: var text } ? text : null;
+
+        return reply["inprog"].AsBsonArray.OfType<BsonDocument>()
+            .Where(op => op.Contains("client") || op.Contains("client_s"))
+            .Select(op =>
+            {
+                var command = op.GetValue("command", new BsonDocument()) as BsonDocument ?? [];
+                var shown = new BsonDocument(command.Where(e => !e.Name.StartsWith('$') && e.Name != "lsid"));
+                var active = op.GetValue("active", false).ToBoolean();
+                return new ActivitySession
+                {
+                    Id = op.GetValue("opid", BsonNull.Value) is { IsBsonNull: false } opid ? Text(MongoValues.ToCell(opid)) ?? "?" : "?",
+                    User = op.GetValue("effectiveUsers", BsonNull.Value) is BsonArray users && users.FirstOrDefault() is BsonDocument user ? Field(user, "user") : null,
+                    Database = Field(op, "ns") is { } ns && ns.IndexOf('.') is var dot and > 0 ? ns[..dot] : command.GetValue("$db", BsonNull.Value) is BsonString db ? db.Value : null,
+                    Client = Field(op, "client") ?? Field(op, "client_s"),
+                    Application = Field(op, "appName"),
+                    State = active ? "active" : "idle",
+                    Seconds = op.GetValue("microsecs_running", BsonNull.Value) is { IsNumeric: true } micros ? micros.ToDouble() / 1_000_000 : null,
+                    Wait = op.GetValue("waitingForLock", false).ToBoolean() ? "lock" : Field(op, "msg"),
+                    Query = shown.ElementCount > 0 ? MongoValues.Shell(shown) : null,
+                    IsSelf = command.Contains("currentOp"),
+                };
+            })
+            .OrderBy(s => s.IsIdle)
+            .ThenByDescending(s => s.Seconds ?? 0)
+            .ToList();
+    }
+
+    private static async Task KillOpAsync(MongoConnection mongo, string id, CancellationToken ct)
+    {
+        // A mongos op id is "shard:number"; a mongod one is a number.
+        BsonValue op = long.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)
+            ? number is >= int.MinValue and <= int.MaxValue ? new BsonInt32((int)number) : new BsonInt64(number)
+            : new BsonString(id);
+        try
+        {
+            await mongo.Admin.RunCommandAsync<BsonDocument>(new BsonDocument { { "killOp", 1 }, { "op", op } }, cancellationToken: ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is MongoException or TimeoutException)
+        {
+            throw new IntrospectionException(MongoConnection.Message(ex), ex);
+        }
+    }
+
+    // Oracle session ids are "sid,serial#"; both parts are checked as integers.
+    private static string OracleSession(string id) =>
+        id.Split(',') is [var sid, var serial] ? $"{Number(sid.Trim())},{Number(serial.Trim())}" : throw new IntrospectionException($"'{id}' is not an Oracle session id (sid,serial#).");
 
     // Session ids are integers; anything else is refused rather than spliced into SQL.
     private static long Number(string id) =>

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Bengine.Api;
 using Bengine.Enums;
 using Bengine.Generators;
 using Bengine.Generators.Languages;
@@ -19,10 +18,6 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(
         new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
-// Registered servers live in the user's config directory, shared with the
-// desktop Studio; session passwords for unsaved credentials live in memory.
-builder.Services.AddSingleton(new ServerRegistry(new Bengine.Introspection.Servers.ServerStore()));
-
 const string DevCors = "designer";
 builder.Services.AddCors(options =>
     options.AddPolicy(DevCors, policy =>
@@ -33,9 +28,6 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 app.UseCors(DevCors);
 
-// --- Live-database explorer endpoints (connect, discover, introspect, browse). ---
-app.MapDatabaseEndpoints();
-
 // --- Metadata endpoints ---
 app.MapGet("/api/providers", () => Enum.GetNames<DatabaseProvider>());
 app.MapGet("/api/languages", () => Enum.GetNames<Language>());
@@ -43,7 +35,7 @@ app.MapGet("/api/languages", () => Enum.GetNames<Language>());
 // --- Generation endpoints. The request body is the schema.json document. ---
 app.MapPost("/api/generate/sql/{provider}", async (string provider, HttpRequest request) =>
 {
-    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target))
+    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target) || !Bengine.Constants.SchemaConstants.AllProviders.Contains(target))
     {
         return Results.BadRequest(new { error = $"Unknown provider '{provider}'." });
     }
@@ -69,7 +61,7 @@ app.MapPost("/api/generate/code/{language}", async (string language, HttpRequest
 
 app.MapPost("/api/generate/migration/{provider}", async (string provider, HttpRequest request) =>
 {
-    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target))
+    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target) || !Bengine.Constants.SchemaConstants.AllProviders.Contains(target))
     {
         return Results.BadRequest(new { error = $"Unknown provider '{provider}'." });
     }
@@ -83,7 +75,7 @@ app.MapPost("/api/generate/migration/{provider}", async (string provider, HttpRe
 
 app.MapPost("/api/validate/{provider}", async (string provider, HttpRequest request) =>
 {
-    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target))
+    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target) || !Bengine.Constants.SchemaConstants.AllProviders.Contains(target))
     {
         return Results.BadRequest(new { error = $"Unknown provider '{provider}'." });
     }
@@ -107,7 +99,7 @@ app.MapPost("/api/import/sql", (ImportSqlRequest request) =>
     if (!string.IsNullOrWhiteSpace(request.Dialect)
         && !request.Dialect.Equals("auto", StringComparison.OrdinalIgnoreCase))
     {
-        if (!Enum.TryParse<DatabaseProvider>(request.Dialect, ignoreCase: true, out var parsed))
+        if (!Enum.TryParse<DatabaseProvider>(request.Dialect, ignoreCase: true, out var parsed) || !Bengine.Constants.SchemaConstants.AllProviders.Contains(parsed))
         {
             return Results.BadRequest(new { error = $"Unknown dialect '{request.Dialect}'." });
         }
@@ -175,6 +167,7 @@ static ISqlGenerator SqlGeneratorFor(DatabaseProvider provider) => provider swit
     DatabaseProvider.SqlServer => new SqlServerGenerator(),
     DatabaseProvider.MySql => new MySqlGenerator(),
     DatabaseProvider.Sqlite => new SqliteGenerator(),
+    DatabaseProvider.Oracle => new OracleGenerator(),
     _ => throw new ArgumentOutOfRangeException(nameof(provider)),
 };
 

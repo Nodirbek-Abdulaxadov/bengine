@@ -72,6 +72,11 @@ public static class ObjectUsages
     /// <returns>The usages.</returns>
     public static async Task<IReadOnlyList<Usage>> InDatabaseAsync(DatabaseSession session, string name, CancellationToken cancellationToken = default)
     {
+        if (session.Provider == DatabaseProvider.Oracle)
+        {
+            return await OracleUsagesAsync(session, name, cancellationToken).ConfigureAwait(false);
+        }
+
         var sql = session.Provider switch
         {
             DatabaseProvider.PostgreSql => """
@@ -112,4 +117,47 @@ public static class ObjectUsages
 
         return usages;
     }
+    // Oracle: LONG columns (view text, trigger bodies) cannot be combined in one query, and
+    // stored PL/SQL lives line by line in ALL_SOURCE.
+    private static async Task<IReadOnlyList<Usage>> OracleUsagesAsync(DatabaseSession session, string name, CancellationToken cancellationToken)
+    {
+        const string Owners = "IN (SELECT username FROM all_users WHERE oracle_maintained = 'N' OR username = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))";
+        var usages = new List<Usage>();
+        foreach (var (kind, sql) in new[]
+        {
+            ("View", $"SELECT owner || '.' || view_name, text FROM all_views WHERE owner {Owners}"),
+            ("Trigger", $"SELECT owner || '.' || trigger_name, trigger_body FROM all_triggers WHERE owner {Owners}"),
+        })
+        {
+            var result = await session.Query.ExecuteAsync(sql, 50_000, cancellationToken).ConfigureAwait(false);
+            foreach (var row in result.Rows)
+            {
+                if (row[1]?.ToString() is { } definition && definition.Contains(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    usages.AddRange(InText(kind, row[0]?.ToString() ?? "?", definition, name, DatabaseProvider.Oracle).Take(1).Select(u => u with { Definition = definition }));
+                }
+            }
+        }
+
+        var literal = name.ToUpperInvariant().Replace("'", "''", StringComparison.Ordinal);
+        var source = await session.Query.ExecuteAsync(
+            $"""
+            SELECT INITCAP(type), owner || '.' || name, line, text FROM all_source
+            WHERE owner {Owners} AND UPPER(text) LIKE '%{literal}%'
+            ORDER BY owner, name, type, line
+            """,
+            50_000,
+            cancellationToken).ConfigureAwait(false);
+        foreach (var unit in source.Rows.GroupBy(r => (Kind: r[0]?.ToString() ?? "Object", Name: r[1]?.ToString() ?? "?")))
+        {
+            var hit = unit.FirstOrDefault(r => FindInText(r[3]?.ToString() ?? string.Empty, name, DatabaseProvider.Oracle).Count > 0);
+            if (hit is not null)
+            {
+                usages.Add(new Usage(unit.Key.Kind, unit.Key.Name, Convert.ToInt32(hit[2], System.Globalization.CultureInfo.InvariantCulture), (hit[3]?.ToString() ?? string.Empty).Trim()));
+            }
+        }
+
+        return usages;
+    }
+
 }

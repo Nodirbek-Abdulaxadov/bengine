@@ -80,8 +80,13 @@ public sealed class RelationalDataWriter : RelationalComponentBase, ITableDataWr
         }
 
         var parameters = new List<(string Name, object Value)>();
-        var tuples = rows.Select(row => "(" + string.Join(", ", names.Select(n => AddParameter(parameters, row.GetValueOrDefault(n)))) + ")");
-        var sql = $"INSERT INTO {QualifiedName(table)} ({string.Join(", ", names.Select(Dialect.QuoteIdentifier))}) VALUES {string.Join(", ", tuples)}";
+        var tuples = rows.Select(row => "(" + string.Join(", ", names.Select(n => AddParameter(parameters, row.GetValueOrDefault(n)))) + ")").ToList();
+        var target = $"{QualifiedName(table)} ({string.Join(", ", names.Select(Dialect.QuoteIdentifier))})";
+
+        // Oracle before 23ai has no multi-row VALUES; INSERT ALL loads the rows in one statement.
+        var sql = Provider == DatabaseProvider.Oracle
+            ? $"INSERT ALL {string.Join(" ", tuples.Select(t => $"INTO {target} VALUES {t}"))} SELECT 1 FROM dual"
+            : $"INSERT INTO {target} VALUES {string.Join(", ", tuples)}";
         await using var command = CreateCommand(sql, parameters);
         try
         {
@@ -231,8 +236,14 @@ public sealed class RelationalDataWriter : RelationalComponentBase, ITableDataWr
                     Check(pair.Key);
                 }
 
+                // Oracle has no DEFAULT VALUES: name one column and give it its default.
                 return written.Count == 0
-                    ? provider == DatabaseProvider.MySql ? $"INSERT INTO {qualified} () VALUES ()" : $"INSERT INTO {qualified} DEFAULT VALUES"
+                    ? provider switch
+                    {
+                        DatabaseProvider.MySql => $"INSERT INTO {qualified} () VALUES ()",
+                        DatabaseProvider.Oracle when columns?.FirstOrDefault() is { } first => $"INSERT INTO {qualified} ({quote(first)}) VALUES (DEFAULT)",
+                        _ => $"INSERT INTO {qualified} DEFAULT VALUES",
+                    }
                     : $"INSERT INTO {qualified} ({string.Join(", ", written.Select(p => quote(p.Key)))}) " +
                       $"VALUES ({string.Join(", ", written.Select(p => value(p.Value)))})";
             }

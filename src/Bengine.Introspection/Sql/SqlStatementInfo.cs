@@ -76,6 +76,11 @@ public sealed record SqlStatementInfo
     /// <returns>The classification.</returns>
     public static SqlStatementInfo Classify(string sql, DatabaseProvider provider)
     {
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return Mongo.MongoShell.Classify(sql);
+        }
+
         var lexemes = SqlLexer.Significant(sql, provider);
         var top = TopLevel(lexemes);
         var first = lexemes.FirstOrDefault(l => l.Kind == SqlLexemeKind.Word);

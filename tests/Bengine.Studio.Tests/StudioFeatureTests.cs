@@ -711,9 +711,10 @@ public sealed class StudioFeatureTests : IDisposable
         Shot(window, "feat-22-datagrip-tree");
 
         // Ctrl+Q shows the quick documentation.
-        await window.ShowQuickDocAsync(orders);
+        var quickDoc = await window.ShowQuickDocAsync(orders);
         Assert.Contains(vm.QuickDoc.Rows, r => r.Value == "orders");
         Shot(window, "feat-23-quick-doc");
+        quickDoc?.Hide();
         window.Close();
     }
 

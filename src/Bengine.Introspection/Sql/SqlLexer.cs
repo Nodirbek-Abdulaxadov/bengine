@@ -85,6 +85,21 @@ public readonly record struct SqlLexeme(SqlLexemeKind Kind, int Start, int Lengt
 /// </summary>
 public static class SqlLexer
 {
+    // The end of an Oracle q-quoted string starting at i (-1 when unterminated), or null when there is none.
+    private static int? TryOracleQuote(string sql, int i)
+    {
+        var at = sql[i] is 'n' or 'N' ? i + 1 : i;
+        if (at + 2 >= sql.Length || sql[at] is not ('q' or 'Q') || sql[at + 1] != '\'' || (at > 0 && at == i && (char.IsLetterOrDigit(sql[at - 1]) || sql[at - 1] == '_')))
+        {
+            return null;
+        }
+
+        var open = sql[at + 2];
+        var close = open switch { '[' => ']', '{' => '}', '(' => ')', '<' => '>', _ => open };
+        var end = sql.IndexOf($"{close}'", at + 3, StringComparison.Ordinal);
+        return end < 0 ? -1 : end + 2;
+    }
+
     private static readonly string[] Operators =
         ["::", "<>", "!=", "<=", ">=", "||", "->>", "->", "#>>", "#>", ":=", "=>", "@>", "<@", "&&", "**", "<<", ">>"];
 
@@ -101,6 +116,7 @@ public static class SqlLexer
     public static List<SqlLexeme> Lex(string sql, DatabaseProvider? provider = null)
     {
         var backslashEscapes = provider == DatabaseProvider.MySql;
+        var oracle = provider == DatabaseProvider.Oracle;
         var dollarQuotes = provider is null or DatabaseProvider.PostgreSql;
         var result = new List<SqlLexeme>();
         var i = 0;
@@ -133,6 +149,12 @@ public static class SqlLexer
                 var close = sql.IndexOf("*/", i + 2, StringComparison.Ordinal);
                 i = close < 0 ? sql.Length : close + 2;
                 result.Add(Make(SqlLexemeKind.Comment, sql, start, i, close >= 0));
+            }
+            else if (oracle && TryOracleQuote(sql, i) is { } quoteEnd)
+            {
+                // Oracle alternative quoting: q'[...]', nq'{...}', q'!...!'.
+                i = quoteEnd < 0 ? sql.Length : quoteEnd;
+                result.Add(Make(SqlLexemeKind.String, sql, start, i, quoteEnd >= 0));
             }
             else if (c == '\'' || ((c is 'E' or 'e' or 'N' or 'n' or 'B' or 'b' or 'X' or 'x') && next == '\''))
             {

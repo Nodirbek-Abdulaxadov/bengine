@@ -105,10 +105,11 @@ public abstract class SchemaProviderBase : IDatabaseExplorer, IDatabaseIntrospec
         var command = Connection.CreateCommand();
         command.CommandText = sql;
         command.Transaction = TransactionSource?.Invoke();
+        Bengine.Introspection.Connection.OracleSupport.Prepare(command);
         foreach (var (name, value) in parameters)
         {
             var parameter = command.CreateParameter();
-            parameter.ParameterName = name;
+            parameter.ParameterName = Bengine.Introspection.Connection.OracleSupport.ParameterName(command, name);
             parameter.Value = value ?? DBNull.Value;
             command.Parameters.Add(parameter);
         }
@@ -133,6 +134,7 @@ public abstract class SchemaProviderBase : IDatabaseExplorer, IDatabaseIntrospec
         try
         {
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            Bengine.Introspection.Connection.OracleSupport.Prepare(reader);
             var results = new List<T>();
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {

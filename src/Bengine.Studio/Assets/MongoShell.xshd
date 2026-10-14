@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!-- MongoDB shell highlighting for the console: db and show, methods, operators ($gt, $set, $match…),
+     BSON constructors (ObjectId, ISODate…), strings, numbers, regular expressions, and comments.
+     Colors match SQL.xshd. -->
+<SyntaxDefinition name="MongoShell" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" foreground="#637087" fontStyle="italic" />
+  <Color name="String" foreground="#c3e88d" />
+  <Color name="Number" foreground="#f78c6c" />
+  <Color name="Keyword" foreground="#c792ea" fontWeight="bold" />
+  <Color name="Constructor" foreground="#82aaff" />
+  <Color name="Operator" foreground="#ff9cac" fontWeight="bold" />
+  <Color name="Method" foreground="#89ddff" />
+  <Color name="Regex" foreground="#ffcb6b" />
+
+  <RuleSet>
+    <Span color="Comment" begin="//" />
+    <Span color="Comment" multiline="true" begin="/\*" end="\*/" />
+    <Span color="String" begin="&quot;" end="&quot;">
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+    <Span color="String" begin="'" end="'">
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <Rule color="Regex">(?&lt;=[:(,\[]\s*)/(?![/*])(?:\\.|\[[^\]]*\]|[^/\\\n])+/[gimsux]*</Rule>
+    <Rule color="Operator">\$[A-Za-z_][A-Za-z0-9_]*</Rule>
+
+    <Keywords color="Keyword">
+      <Word>db</Word><Word>show</Word><Word>use</Word><Word>true</Word><Word>false</Word><Word>null</Word><Word>undefined</Word>
+      <Word>new</Word><Word>dbs</Word><Word>databases</Word><Word>collections</Word><Word>tables</Word><Word>users</Word><Word>roles</Word>
+    </Keywords>
+
+    <Keywords color="Constructor">
+      <Word>ObjectId</Word><Word>ISODate</Word><Word>Date</Word><Word>NumberLong</Word><Word>NumberInt</Word><Word>NumberDecimal</Word>
+      <Word>UUID</Word><Word>BinData</Word><Word>HexData</Word><Word>Timestamp</Word><Word>MinKey</Word><Word>MaxKey</Word>
+    </Keywords>
+
+    <Rule color="Method">(?&lt;=\.)\s*[A-Za-z_][A-Za-z0-9_]*(?=\s*\()</Rule>
+    <Rule color="Number">\b-?(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b</Rule>
+  </RuleSet>
+</SyntaxDefinition>

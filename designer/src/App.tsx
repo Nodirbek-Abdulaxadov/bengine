@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   Background,
   Controls,
@@ -15,7 +15,6 @@ import { TableNode, type TableNodeType } from './components/TableNode';
 import { RightPanel } from './components/RightPanel';
 import { Toasts } from './components/Toasts';
 import { Toolbar } from './components/Toolbar';
-import { Explorer } from './components/Explorer';
 import { useDesigner } from './state/store';
 
 const nodeTypes = { table: TableNode };
@@ -102,74 +101,18 @@ function Canvas() {
   );
 }
 
-type View = 'designer' | 'explorer';
-
-const tabStyle = (active: boolean): React.CSSProperties => ({
-  background: active ? '#e0862f' : 'transparent',
-  color: active ? '#1a1206' : '#e6ebf5',
-  border: '1px solid #2e3a4b',
-  borderRadius: 6,
-  padding: '4px 12px',
-  cursor: 'pointer',
-  fontWeight: 600,
-});
-
 export default function App() {
-  const [view, setViewState] = useState<View>(() => {
-    try {
-      return localStorage.getItem('bengine.view') === 'explorer' ? 'explorer' : 'designer';
-    } catch {
-      return 'designer';
-    }
-  });
-  const setView = (next: View) => {
-    setViewState(next);
-    try {
-      localStorage.setItem('bengine.view', next);
-    } catch {
-      // Storage can be unavailable (private mode); the choice just isn't remembered.
-    }
-  };
-
   return (
     <div className="app">
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          alignItems: 'center',
-          padding: '8px 10px',
-          background: '#11161e',
-          borderBottom: '1px solid #2e3a4b',
-        }}
-      >
-        <strong style={{ color: '#e6ebf5', marginRight: 8 }}>Bengine</strong>
-        <button style={tabStyle(view === 'designer')} onClick={() => setView('designer')}>
-          Designer
-        </button>
-        <button style={tabStyle(view === 'explorer')} onClick={() => setView('explorer')}>
-          Database Explorer
-        </button>
-      </div>
-
-      {view === 'designer' ? (
-        <>
-          <Toolbar />
-          <div className="app__body">
-            <ReactFlowProvider>
-              <div className="app__canvas">
-                <Canvas />
-              </div>
-            </ReactFlowProvider>
-            <RightPanel />
+      <Toolbar />
+      <div className="app__body">
+        <ReactFlowProvider>
+          <div className="app__canvas">
+            <Canvas />
           </div>
-        </>
-      ) : (
-        <div className="app__body">
-          <Explorer />
-        </div>
-      )}
-
+        </ReactFlowProvider>
+        <RightPanel />
+      </div>
       <Toasts />
     </div>
   );

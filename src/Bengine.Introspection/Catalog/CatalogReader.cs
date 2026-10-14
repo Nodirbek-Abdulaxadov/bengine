@@ -39,6 +39,7 @@ public static class CatalogReader
                 DatabaseProvider.MySql => await ReadMySqlAsync(reader).ConfigureAwait(false),
                 DatabaseProvider.SqlServer => await ReadSqlServerAsync(reader, connection).ConfigureAwait(false),
                 DatabaseProvider.Sqlite => await ReadSqliteAsync(reader).ConfigureAwait(false),
+                DatabaseProvider.Oracle => await ReadOracleAsync(reader).ConfigureAwait(false),
                 _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, "Unknown database provider."),
             };
         }
@@ -239,6 +240,66 @@ public static class CatalogReader
         return new DatabaseCatalog(DatabaseProvider.Sqlite, "main", null, [], Group(columns), keys, []);
     }
 
+    // Oracle: the user schemas the connected user can see, plus its own.
+    private static async Task<DatabaseCatalog> ReadOracleAsync(Reader reader)
+    {
+        const string Users = "SELECT username FROM all_users WHERE oracle_maintained = 'N' OR username = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')";
+        var current = await reader.ScalarAsync("SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM dual").ConfigureAwait(false);
+        var service = await reader.ScalarAsync("SELECT SYS_CONTEXT('USERENV', 'SERVICE_NAME') FROM dual").ConfigureAwait(false);
+        var schemas = await reader.ListAsync(Users + " ORDER BY 1", r => r.GetString(0)).ConfigureAwait(false);
+
+        var columns = await reader.ListAsync($"""
+            SELECT c.owner, c.table_name, CASE WHEN v.view_name IS NULL AND m.mview_name IS NULL THEN 'T' ELSE 'V' END, c.column_name,
+                   c.data_type || CASE
+                       WHEN c.data_type IN ('VARCHAR2', 'NVARCHAR2', 'CHAR', 'NCHAR') THEN '(' || c.char_length || ')'
+                       WHEN c.data_type = 'RAW' THEN '(' || c.data_length || ')'
+                       WHEN c.data_type = 'NUMBER' AND c.data_precision IS NOT NULL
+                           THEN '(' || c.data_precision || CASE WHEN c.data_scale > 0 THEN ',' || c.data_scale END || ')' END,
+                   CASE c.nullable WHEN 'Y' THEN 1 ELSE 0 END,
+                   CASE WHEN pk.column_name IS NULL THEN 0 ELSE 1 END,
+                   CASE WHEN c.default_length > 0 OR c.identity_column = 'YES' THEN 1 ELSE 0 END,
+                   CASE c.virtual_column WHEN 'YES' THEN 1 ELSE 0 END
+            FROM all_tab_cols c
+            JOIN all_objects o ON o.owner = c.owner AND o.object_name = c.table_name AND o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW')
+            LEFT JOIN all_views v ON v.owner = c.owner AND v.view_name = c.table_name
+            LEFT JOIN all_mviews m ON m.owner = c.owner AND m.mview_name = c.table_name
+            LEFT JOIN (SELECT DISTINCT cc.owner, cc.table_name, cc.column_name FROM all_constraints k
+                       JOIN all_cons_columns cc ON cc.owner = k.owner AND cc.constraint_name = k.constraint_name
+                       WHERE k.constraint_type = 'P') pk
+              ON pk.owner = c.owner AND pk.table_name = c.table_name AND pk.column_name = c.column_name
+            WHERE c.owner IN ({Users}) AND c.hidden_column = 'NO' AND c.table_name NOT LIKE 'BIN$%'
+              AND (o.object_type <> 'TABLE' OR m.mview_name IS NULL)
+            ORDER BY c.owner, c.table_name, c.column_id
+            """,
+            r => new Row(r.GetString(0), r.GetString(1), r.GetString(2) == "V" ? TableKind.View : TableKind.Table,
+                new CatalogColumn(r.GetString(3), r.GetString(4), Bool(r, 5), Bool(r, 6), Bool(r, 7), Bool(r, 8)))).ConfigureAwait(false);
+
+        var keyRows = await reader.ListAsync($"""
+            SELECT c.constraint_name, c.owner, c.table_name, cc.column_name, r.owner, r.table_name, rc.column_name
+            FROM all_constraints c
+            JOIN all_cons_columns cc ON cc.owner = c.owner AND cc.constraint_name = c.constraint_name
+            JOIN all_constraints r ON r.owner = c.r_owner AND r.constraint_name = c.r_constraint_name
+            JOIN all_cons_columns rc ON rc.owner = r.owner AND rc.constraint_name = r.constraint_name AND rc.position = cc.position
+            WHERE c.constraint_type = 'R' AND c.owner IN ({Users})
+            ORDER BY c.owner, c.table_name, c.constraint_name, cc.position
+            """,
+            r => (Name: r.GetString(0), Schema: r.GetString(1), Table: r.GetString(2), Column: r.GetString(3),
+                RefSchema: r.GetString(4), RefTable: r.GetString(5), RefColumn: r.GetString(6))).ConfigureAwait(false);
+        var keys = keyRows
+            .GroupBy(k => (k.Schema, k.Table, k.Name))
+            .Select(g => new CatalogForeignKey(g.Key.Name, g.Key.Schema, g.Key.Table, g.Select(k => k.Column).ToList(),
+                g.First().RefSchema, g.First().RefTable, g.Select(k => k.RefColumn).ToList()))
+            .ToList();
+
+        var routines = await reader.ListAsync($"""
+            SELECT owner, object_name, CASE object_type WHEN 'PROCEDURE' THEN 1 ELSE 0 END
+            FROM all_objects WHERE object_type IN ('FUNCTION', 'PROCEDURE') AND owner IN ({Users})
+            """,
+            r => new CatalogRoutine(r.GetString(0), r.GetString(1), Bool(r, 2))).ConfigureAwait(false);
+
+        return new DatabaseCatalog(DatabaseProvider.Oracle, service ?? string.Empty, current, schemas, Group(columns), keys, routines);
+    }
+
     private static List<CatalogRelation> Group(List<Row> rows) => rows
         .GroupBy(r => (r.Schema, r.Table, r.Kind))
         .Select(g => new CatalogRelation(g.Key.Schema, g.Key.Table, g.Key.Kind, g.Select(r => r.Column).ToList()))
@@ -265,6 +326,7 @@ public static class CatalogReader
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
             command.Transaction = transaction;
+            Connection.OracleSupport.Prepare(command);
             var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             return value is null or DBNull ? null : value.ToString();
         }
@@ -274,7 +336,9 @@ public static class CatalogReader
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
             command.Transaction = transaction;
+            Connection.OracleSupport.Prepare(command);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            Connection.OracleSupport.Prepare(reader);
             var result = new List<T>();
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {

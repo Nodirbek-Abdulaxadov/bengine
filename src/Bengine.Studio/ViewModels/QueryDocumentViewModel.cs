@@ -147,6 +147,9 @@ public sealed partial class QueryDocumentViewModel : DocumentViewModel, IAsyncDi
     /// <summary>Gets a value indicating whether the server is read-only.</summary>
     public bool IsReadOnly => Server.ReadOnly;
 
+    /// <summary>Gets whether the console offers manual transactions (MongoDB commands each run on their own).</summary>
+    public bool SupportsTransactions => Provider != DatabaseProvider.MongoDb;
+
     /// <summary>Gets the row-limit choices.</summary>
     public IReadOnlyList<int> Limits { get; } = [100, 500, 1000, 5000, 10000, 50000];
 
@@ -767,10 +770,13 @@ public sealed partial class QueryDocumentViewModel : DocumentViewModel, IAsyncDi
             return false;
         }
 
+        var unfiltered = Provider == DatabaseProvider.MongoDb
+            ? $"This {info.Verb} has an empty filter and affects every document of the collection"
+            : $"This {info.Verb} has no WHERE clause and affects every row of the table";
         if (info.IsUnfilteredDml && _context.Dialogs is { } dialogs
-            && !await dialogs.ConfirmAsync("Unsafe Statement", $"This {info.Verb} has no WHERE clause and affects every row of the table:\n\n{OneLine(sql)}\n\nRun it anyway?"))
+            && !await dialogs.ConfirmAsync("Unsafe Statement", $"{unfiltered}:\n\n{OneLine(sql)}\n\nRun it anyway?"))
         {
-            Log($"Not run: {info.Verb} without WHERE.", MessageKind.Info);
+            Log(Provider == DatabaseProvider.MongoDb ? $"Not run: {info.Verb} with an empty filter." : $"Not run: {info.Verb} without WHERE.", MessageKind.Info);
             return false;
         }
 

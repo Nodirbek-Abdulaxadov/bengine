@@ -206,4 +206,16 @@ public enum NodeKind
 
     /// <summary>A trigger.</summary>
     Trigger,
+
+    /// <summary>The PL/SQL packages of a schema (Oracle).</summary>
+    PackagesFolder,
+
+    /// <summary>A PL/SQL package (Oracle).</summary>
+    Package,
+
+    /// <summary>The synonyms of a schema (Oracle).</summary>
+    SynonymsFolder,
+
+    /// <summary>A synonym (Oracle).</summary>
+    Synonym,
 }

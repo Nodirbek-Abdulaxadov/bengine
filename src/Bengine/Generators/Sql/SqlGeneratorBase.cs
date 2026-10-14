@@ -123,7 +123,7 @@ public abstract class SqlGeneratorBase : ISqlGenerator
             builder.Append($" MAXVALUE {max}");
         }
 
-        builder.Append(sequence.Cycle ? " CYCLE" : " NO CYCLE").Append(';');
+        builder.Append(sequence.Cycle ? " CYCLE" : " " + _dialect.NoCycleKeyword).Append(';');
         return builder.ToString();
     }
 
@@ -191,21 +191,30 @@ public abstract class SqlGeneratorBase : ISqlGenerator
         if (column.Generated is { } generated
             && _dialect.Supports(SqlDialectFeature.GeneratedColumns))
         {
-            var kind = generated.Kind == GeneratedKind.Stored ? "STORED" : "VIRTUAL";
-            builder.Append($" GENERATED ALWAYS AS ({generated.Expression}) {kind}");
+            builder.Append(_dialect.RenderGenerated(generated));
+            if (_dialect.NullabilityOnGeneratedColumns && !column.IsNullable)
+            {
+                builder.Append(" NOT NULL");
+            }
+
             return builder.ToString();
         }
 
-        builder.Append(column.IsNullable ? " NULL" : " NOT NULL");
-
         // An identity column draws its values from the identity; no provider
         // accepts a DEFAULT beside it (a serial's nextval default is implied).
-        if (column.Identity.Strategy == IdentityStrategy.None && _dialect.RenderDefault(column.Default) is { } @default)
+        var @default = column.Identity.Strategy == IdentityStrategy.None && _dialect.RenderDefault(column.Default) is { } value
+            ? " DEFAULT " + value
+            : string.Empty;
+        var nullability = column.IsNullable ? " NULL" : " NOT NULL";
+        if (_dialect.DefaultBeforeNullability)
         {
-            builder.Append(" DEFAULT ").Append(@default);
+            builder.Append(@default).Append(_dialect.RenderIdentity(column.Identity)).Append(nullability);
+        }
+        else
+        {
+            builder.Append(nullability).Append(@default).Append(_dialect.RenderIdentity(column.Identity));
         }
 
-        builder.Append(_dialect.RenderIdentity(column.Identity));
         return builder.ToString();
     }
 
@@ -216,8 +225,7 @@ public abstract class SqlGeneratorBase : ISqlGenerator
         builder.Append(
             $"REFERENCES {QualifiedName(fk.ReferencedSchema, fk.ReferencedTable)} "
             + $"({JoinQuoted(fk.ReferencedColumns)})");
-        builder.Append($" ON DELETE {_dialect.RenderReferentialAction(fk.OnDelete)}");
-        builder.Append($" ON UPDATE {_dialect.RenderReferentialAction(fk.OnUpdate)}");
+        builder.Append(_dialect.RenderForeignKeyActions(fk.OnDelete, fk.OnUpdate));
         return builder.ToString();
     }
 
@@ -241,7 +249,7 @@ public abstract class SqlGeneratorBase : ISqlGenerator
         string.Join(", ", names.Select(_dialect.QuoteIdentifier));
 
     private string QualifiedName(string? schema, string name) =>
-        schema is not null && _dialect.Supports(SqlDialectFeature.Schemas)
-            ? $"{_dialect.QuoteIdentifier(schema)}.{_dialect.QuoteIdentifier(name)}"
+        _dialect.EffectiveSchema(schema) is { } effective && _dialect.Supports(SqlDialectFeature.Schemas)
+            ? $"{_dialect.QuoteIdentifier(effective)}.{_dialect.QuoteIdentifier(name)}"
             : _dialect.QuoteIdentifier(name);
 }

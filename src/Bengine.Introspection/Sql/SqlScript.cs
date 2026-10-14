@@ -32,12 +32,19 @@ public static class SqlScript
     /// <returns>The non-empty statements in order.</returns>
     public static IReadOnlyList<SqlStatement> Split(string sql, DatabaseProvider provider)
     {
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return Mongo.MongoShell.Split(sql);
+        }
+
         var lexemes = SqlLexer.Lex(sql, provider);
         var statements = new List<SqlStatement>();
         var delimiter = ";";
         var start = 0;
         var depth = 0;
         var inRoutine = false;
+        var oracleUnit = false;
+        var declaring = false;
         SqlLexeme? previousWord = null;
         var wordsInStatement = 0;
 
@@ -51,6 +58,8 @@ public static class SqlScript
 
             depth = 0;
             inRoutine = false;
+            oracleUnit = false;
+            declaring = false;
             previousWord = null;
             wordsInStatement = 0;
         }
@@ -88,9 +97,38 @@ public static class SqlScript
                 continue;
             }
 
+            // Oracle (SQL*Plus): a "/" alone on its line ends a PL/SQL unit or block.
+            if (provider == DatabaseProvider.Oracle && lexeme.IsSymbol("/") && AtLineStart(sql, lexeme.Start) && RestOfLineBlank(sql, lexeme.End))
+            {
+                Flush(lexeme.Start);
+                start = lexeme.End;
+                continue;
+            }
+
             if (lexeme.Kind == SqlLexemeKind.Word)
             {
                 wordsInStatement++;
+                if (provider == DatabaseProvider.Oracle)
+                {
+                    // Anonymous blocks nest by BEGIN/END; their DECLARE section holds semicolons.
+                    if (wordsInStatement == 1 && (lexeme.Is("BEGIN") || lexeme.Is("DECLARE")))
+                    {
+                        inRoutine = true;
+                        declaring = lexeme.Is("DECLARE");
+                    }
+                    else if (declaring && lexeme.Is("BEGIN"))
+                    {
+                        declaring = false;
+                    }
+
+                    // Stored PL/SQL units (and object types) run to their "/".
+                    if (wordsInStatement <= 6 && (IsRoutineKeyword(lexeme) || lexeme.Is("PACKAGE") || lexeme.Is("TYPE"))
+                        && StartsWithCreate(lexemes, start, lexeme.Start))
+                    {
+                        oracleUnit = true;
+                    }
+                }
+
                 if (wordsInStatement <= 6 && IsRoutineKeyword(lexeme) && StartsWithCreate(lexemes, start, lexeme.Start))
                 {
                     inRoutine = true;
@@ -134,7 +172,7 @@ public static class SqlScript
             }
 
             // A T-SQL routine body runs to the end of its batch (GO), BEGIN/END or not.
-            if (depth > 0 || (inRoutine && provider == DatabaseProvider.SqlServer))
+            if (depth > 0 || declaring || oracleUnit || (inRoutine && provider == DatabaseProvider.SqlServer))
             {
                 continue;
             }
@@ -148,6 +186,38 @@ public static class SqlScript
 
         Flush(sql.Length);
         return statements;
+    }
+
+    /// <summary>
+    /// Prepares one Oracle statement for the driver, which takes a single statement
+    /// without SQL*Plus punctuation: a SQL statement loses its trailing <c>;</c>
+    /// (Oracle rejects it), while a PL/SQL block or unit keeps (or gains) the
+    /// <c>;</c> after its final <c>END</c>, which PL/SQL requires.
+    /// </summary>
+    /// <param name="statement">The statement.</param>
+    /// <returns>The text to execute.</returns>
+    public static string ForOracle(string statement)
+    {
+        var text = statement.Trim();
+        if (text.EndsWith('/') && (text.Length == 1 || text[^2] is '\n' or '\r'))
+        {
+            text = text[..^1].TrimEnd();
+        }
+
+        var words = SqlLexer.Lex(text, DatabaseProvider.Oracle).Where(l => l.Kind == SqlLexemeKind.Word).Take(6).ToList();
+        var plsql = words.Count > 0 && (words[0].Is("BEGIN") || words[0].Is("DECLARE")
+            || (words[0].Is("CREATE") && words.Skip(1).Any(w => w.Is("PROCEDURE") || w.Is("FUNCTION") || w.Is("PACKAGE") || w.Is("TRIGGER") || w.Is("TYPE"))));
+        if (plsql)
+        {
+            return text.EndsWith(';') ? text : text + ";";
+        }
+
+        while (text.EndsWith(';'))
+        {
+            text = text[..^1].TrimEnd();
+        }
+
+        return text;
     }
 
     /// <summary>

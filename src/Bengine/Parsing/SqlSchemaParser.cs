@@ -94,6 +94,16 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
                 Advance();
                 ParseAlter(builders);
             }
+            else if (Current.IsPunct('/'))
+            {
+                // SQL*Plus runs the buffer at a lone "/" (Oracle scripts).
+                Advance();
+            }
+            else if (Current.IsKeyword("COMMENT"))
+            {
+                Advance();
+                ParseComment(builders);
+            }
             else
             {
                 SkipStatement();
@@ -128,7 +138,8 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
 
             if (Current.IsKeyword("TEMP") || Current.IsKeyword("TEMPORARY")
                 || Current.IsKeyword("GLOBAL") || Current.IsKeyword("LOCAL")
-                || Current.IsKeyword("UNLOGGED"))
+                || Current.IsKeyword("UNLOGGED") || Current.IsKeyword("EDITIONABLE")
+                || Current.IsKeyword("NONEDITIONABLE") || Current.IsKeyword("FORCE") || Current.IsKeyword("NOFORCE"))
             {
                 Advance();
                 continue;
@@ -159,6 +170,15 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
         if (Current.IsKeyword("INDEX"))
         {
             ParseCreateIndex(builders, IndexType.NonUnique);
+            return;
+        }
+
+        // Oracle PL/SQL units hold semicolons in their bodies and end at a lone "/".
+        if (_provider == DatabaseProvider.Oracle
+            && (Current.IsKeyword("PROCEDURE") || Current.IsKeyword("FUNCTION") || Current.IsKeyword("PACKAGE")
+                || Current.IsKeyword("TRIGGER") || (Current.IsKeyword("TYPE") && Peek(1).IsKeyword("BODY"))))
+        {
+            SkipPlSqlUnit();
             return;
         }
 
@@ -442,7 +462,23 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
             if (Current.IsKeyword("DEFAULT"))
             {
                 Advance();
+                if (Current.IsKeyword("ON") && Peek(1).IsKeyword("NULL"))
+                {
+                    // Oracle: DEFAULT ON NULL expr.
+                    Advance();
+                    Advance();
+                }
+
                 defaultValue = ParseDefaultOperand();
+                continue;
+            }
+
+            if (Current.IsKeyword("AS") && Peek(1).IsPunct('('))
+            {
+                // Oracle virtual column: name type AS (expr) [VIRTUAL].
+                Advance();
+                generated = new GeneratedColumn { Kind = GeneratedKind.Virtual, Expression = CaptureParenExpression() };
+                TryKeyword("VIRTUAL");
                 continue;
             }
 
@@ -619,6 +655,12 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
                     hasMax = true;
                     Advance();
                 }
+                else if (Current.IsPunct('*'))
+                {
+                    // Oracle NUMBER(*, s): the maximum precision.
+                    args.Add(38);
+                    Advance();
+                }
                 else if (Current.Kind == SqlTokenKind.Number)
                 {
                     if (int.TryParse(Current.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
@@ -629,6 +671,12 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
                     Advance();
                 }
                 else
+                {
+                    Advance();
+                }
+
+                // Length semantics and other qualifiers (Oracle VARCHAR2(100 BYTE)) are ignored.
+                while (!AtEnd && !Current.IsPunct(',') && !Current.IsPunct(')'))
                 {
                     Advance();
                 }
@@ -646,6 +694,7 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
         var withTimeZone = false;
         if (TryKeyword("WITH"))
         {
+            TryKeyword("LOCAL");
             TryKeyword("TIME");
             TryKeyword("ZONE");
             withTimeZone = true;
@@ -686,7 +735,9 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
             return (new ColumnTypeOptions { DataType = DbDataType.Text, IsUnsigned = unsigned }, false);
         }
 
-        var resolved = SqlTypeResolver.Resolve(_provider, name, firstArgument);
+        var resolved = _provider == DatabaseProvider.Oracle && OracleType(name, args) is { } oracle
+            ? new SqlTypeResolver.Resolved(oracle, ImpliesAutoIncrement: false)
+            : SqlTypeResolver.Resolve(_provider, name, firstArgument);
         var dataType = resolved.DataType;
         if (withTimeZone && dataType == DbDataType.Timestamp)
         {
@@ -756,6 +807,28 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
             return "character varying";
         }
 
+        if (name.Equals("long", StringComparison.OrdinalIgnoreCase) && Current.IsKeyword("raw"))
+        {
+            Advance();
+            return "long raw";
+        }
+
+        // Oracle INTERVAL DAY [(p)] TO SECOND / INTERVAL YEAR [(p)] TO MONTH; a trailing (p) is left as the argument.
+        if (name.Equals("interval", StringComparison.OrdinalIgnoreCase) && (Current.IsKeyword("day") || Current.IsKeyword("year")))
+        {
+            var from = Current.Text.ToLowerInvariant();
+            Advance();
+            if (Current.IsPunct('('))
+            {
+                SkipBalanced();
+            }
+
+            TryKeyword("TO");
+            var to = Current.Text.ToLowerInvariant();
+            Advance();
+            return $"interval {from} to {to}";
+        }
+
         if (name.Equals("national", StringComparison.OrdinalIgnoreCase))
         {
             if (Current.IsKeyword("character") || Current.IsKeyword("char"))
@@ -786,6 +859,11 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
         if (TryKeyword("BY"))
         {
             TryKeyword("DEFAULT");
+            if (TryKeyword("ON"))
+            {
+                // Oracle: GENERATED BY DEFAULT ON NULL AS IDENTITY.
+                TryKeyword("NULL");
+            }
         }
 
         TryKeyword("AS");
@@ -976,11 +1054,25 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
                     : DefaultValue.Function(_sql[start..end]);
             }
 
+            if (Current.IsPunct('.'))
+            {
+                // A qualified operand such as Oracle's seq.NEXTVAL.
+                var last = token.End;
+                while (Current.IsPunct('.') && Peek(1).Kind is SqlTokenKind.Word or SqlTokenKind.Quoted)
+                {
+                    Advance();
+                    last = Current.End;
+                    Advance();
+                }
+
+                return DefaultValue.Expression(_sql[start..last]);
+            }
+
             var lower = word.ToLowerInvariant();
             return lower switch
             {
                 "current_timestamp" or "now" or "getdate" or "sysdatetime"
-                    or "systimestamp" or "localtimestamp" => DefaultValue.CurrentTimestamp,
+                    or "systimestamp" or "localtimestamp" or "sysdate" => DefaultValue.CurrentTimestamp,
                 "current_date" => new DefaultValue { Kind = DefaultValueKind.CurrentDate },
                 "current_time" => new DefaultValue { Kind = DefaultValueKind.CurrentTime },
                 "null" => new DefaultValue { Kind = DefaultValueKind.Null },
@@ -989,6 +1081,114 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
         }
 
         return DefaultValue.None;
+    }
+
+    // Oracle's single NUMBER type maps by precision and scale; DATE carries a time of day.
+    private static DbDataType? OracleType(string name, IReadOnlyList<int> args) => name.ToLowerInvariant() switch
+    {
+        "number" when args.Count == 0 || (args.Count >= 2 && args[1] != 0) => DbDataType.Decimal,
+        "number" => args[0] switch
+        {
+            1 => DbDataType.Boolean,
+            <= 3 => DbDataType.TinyInt,
+            <= 5 => DbDataType.SmallInt,
+            <= 10 => DbDataType.Integer,
+            <= 19 => DbDataType.BigInt,
+            _ => DbDataType.Decimal,
+        },
+        "date" => DbDataType.Timestamp,
+        "float" => DbDataType.Double,
+        _ => null,
+    };
+
+    // COMMENT ON TABLE t IS '...' / COMMENT ON COLUMN t.c IS '...' (PostgreSQL, Oracle).
+    private void ParseComment(List<TableBuilder> builders)
+    {
+        if (!TryKeyword("ON"))
+        {
+            SkipStatement();
+            return;
+        }
+
+        var onColumn = TryKeyword("COLUMN");
+        if (!onColumn && !TryKeyword("TABLE"))
+        {
+            SkipStatement();
+            return;
+        }
+
+        var parts = new List<string> { ReadName() };
+        while (TryPunct('.'))
+        {
+            parts.Add(ReadName());
+        }
+
+        if (!TryKeyword("IS") || Current.Kind != SqlTokenKind.String)
+        {
+            SkipStatement();
+            return;
+        }
+
+        var text = Unquote(Current.Text);
+        Advance();
+        var tableName = onColumn ? parts[^2] : parts[^1];
+        if (builders.FirstOrDefault(b => b.Name.Equals(tableName, StringComparison.OrdinalIgnoreCase)) is { } builder)
+        {
+            if (!onColumn)
+            {
+                builder.Comment = text.Length == 0 ? null : text;
+            }
+            else if (builder.Columns.FindIndex(c => c.Name.Equals(parts[^1], StringComparison.OrdinalIgnoreCase)) is var index and >= 0)
+            {
+                builder.Columns[index] = new Column
+                {
+                    Name = builder.Columns[index].Name,
+                    Type = builder.Columns[index].Type,
+                    Nullability = builder.Columns[index].Nullability,
+                    Default = builder.Columns[index].Default,
+                    Identity = builder.Columns[index].Identity,
+                    Generated = builder.Columns[index].Generated,
+                    Comment = text.Length == 0 ? null : text,
+                };
+            }
+        }
+
+        SkipStatement();
+    }
+
+    // Skips a PL/SQL unit to the "/" alone on its line that ends it.
+    private void SkipPlSqlUnit()
+    {
+        while (!AtEnd)
+        {
+            var token = Current;
+            Advance();
+            if (token.IsPunct('/') && AloneOnLine(token))
+            {
+                return;
+            }
+        }
+    }
+
+    private bool AloneOnLine(SqlToken token)
+    {
+        for (var i = token.Start - 1; i >= 0 && _sql[i] != '\n'; i--)
+        {
+            if (!char.IsWhiteSpace(_sql[i]))
+            {
+                return false;
+            }
+        }
+
+        for (var i = token.End; i < _sql.Length && _sql[i] != '\n'; i++)
+        {
+            if (!char.IsWhiteSpace(_sql[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool IsCurrentTimestamp(string word) =>
@@ -1069,7 +1269,13 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
             TryKeyword("EXISTS");
         }
 
+        // The index name may carry its schema (Oracle, PostgreSQL): schema.index.
         var indexName = ReadName();
+        while (TryPunct('.'))
+        {
+            indexName = ReadName();
+        }
+
         Expect("ON");
         var (_, tableName) = ParseQualifiedName();
 
@@ -1203,6 +1409,8 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
     private bool AtEnd => _pos >= _tokens.Count;
 
     private SqlToken Current => _pos < _tokens.Count ? _tokens[_pos] : EndToken;
+
+    private SqlToken Peek(int offset) => _pos + offset < _tokens.Count ? _tokens[_pos + offset] : EndToken;
 
     private void Advance() => _pos++;
 
@@ -1485,6 +1693,8 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
 
         public string? PrimaryKeyName { get; set; }
 
+        public string? Comment { get; set; }
+
         public Table Build()
         {
             var keyColumns = TablePrimaryKey.Count > 0 ? TablePrimaryKey : InlinePrimaryKey;
@@ -1505,6 +1715,7 @@ public sealed class SqlSchemaParser : ISqlSchemaParser
                 ForeignKeys = ForeignKeys,
                 Indexes = Indexes,
                 CheckConstraints = Checks,
+                Comment = Comment,
             };
         }
     }

@@ -10,6 +10,7 @@ const DIALECTS: { value: string; label: string }[] = [
   { value: 'SqlServer', label: 'SQL Server' },
   { value: 'MySql', label: 'MySQL' },
   { value: 'Sqlite', label: 'SQLite' },
+  { value: 'Oracle', label: 'Oracle' },
 ];
 
 interface ImportSqlDialogProps {

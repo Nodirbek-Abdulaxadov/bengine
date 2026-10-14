@@ -48,13 +48,14 @@ public sealed class RelationalQueryExecutor : RelationalComponentBase, IQueryExe
         var stopwatch = Stopwatch.StartNew();
 
         await using var command = NewCommand();
-        command.CommandText = sql;
+        command.CommandText = Provider == DatabaseProvider.Oracle ? Sql.SqlScript.ForOracle(sql) : sql;
         command.CommandTimeout = 0;
         PrepareForDisplay(command);
 
         try
         {
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            Bengine.Introspection.Connection.OracleSupport.Prepare(reader);
             var results = new List<QueryResult>();
             do
             {
@@ -101,13 +102,14 @@ public sealed class RelationalQueryExecutor : RelationalComponentBase, IQueryExe
     public async IAsyncEnumerable<object?[]> StreamAsync(string sql, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         await using var command = NewCommand();
-        command.CommandText = sql;
+        command.CommandText = Provider == DatabaseProvider.Oracle ? Sql.SqlScript.ForOracle(sql) : sql;
         command.CommandTimeout = 0;
         PrepareForDisplay(command);
         DbDataReader reader;
         try
         {
             reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            Bengine.Introspection.Connection.OracleSupport.Prepare(reader);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not Introspection.IntrospectionException)
         {
@@ -130,7 +132,7 @@ public sealed class RelationalQueryExecutor : RelationalComponentBase, IQueryExe
                     row = new object?[reader.FieldCount];
                     for (var i = 0; i < row.Length; i++)
                     {
-                        var value = reader.GetValue(i);
+                        var value = Bengine.Introspection.Connection.OracleSupport.GetValue(reader, i);
                         row[i] = value is DBNull ? null : FromDisplayText(value, types[i]);
                     }
                 }
@@ -166,7 +168,7 @@ public sealed class RelationalQueryExecutor : RelationalComponentBase, IQueryExe
             var row = new object?[reader.FieldCount];
             for (var i = 0; i < reader.FieldCount; i++)
             {
-                var value = reader.GetValue(i);
+                var value = Bengine.Introspection.Connection.OracleSupport.GetValue(reader, i);
                 row[i] = value is DBNull ? null : FromDisplayText(value, types[i]);
             }
 
