@@ -36,7 +36,10 @@ public abstract partial class DocumentViewModel : ObservableObject
 /// <param name="Value">The value or detail.</param>
 public sealed record PropertyRow(string Name, string? Value);
 
-/// <summary>The Properties tab: the selected node's properties, or its children for a collection.</summary>
+/// <summary>
+/// An object's Quick Documentation (Ctrl+Q): its properties, or its children
+/// for a collection, and its DDL.
+/// </summary>
 public sealed partial class PropertiesDocumentViewModel : DocumentViewModel
 {
     [ObservableProperty]
@@ -46,29 +49,52 @@ public sealed partial class PropertiesDocumentViewModel : DocumentViewModel
     private string _secondHeader = "Value";
 
     [ObservableProperty]
-    private string? _message = "Select an object in the Object Explorer.";
+    private string? _message;
 
     [ObservableProperty]
     private bool _isLoading;
 
-    /// <inheritdoc />
-    public override string Title => "Properties";
+    [ObservableProperty]
+    private string? _sql;
+
+    /// <summary>Gets or sets the dialect of the DDL.</summary>
+    public Bengine.Enums.DatabaseProvider Provider { get; set; } = Bengine.Enums.DatabaseProvider.PostgreSql;
 
     /// <inheritdoc />
-    public override bool CanClose => false;
+    public override string Title => "Quick Documentation";
 
     /// <summary>Gets the rows to show.</summary>
     public ObservableCollection<PropertyRow> Rows { get; } = [];
 }
 
-/// <summary>The SQL tab: the selected object's DDL.</summary>
+/// <summary>An object's DDL in a closable tab ("Go to DDL", Ctrl+B).</summary>
 public sealed partial class SqlDocumentViewModel : DocumentViewModel
 {
+    private readonly string _title;
+    private readonly string? _iconKind;
+    private readonly string? _accent;
+
     [ObservableProperty]
     private string? _sql;
 
     [ObservableProperty]
-    private string? _message = "Select an object to see its SQL.";
+    private string? _message;
+
+    /// <summary>Creates the tab.</summary>
+    /// <param name="title">The tab title (the object's name).</param>
+    /// <param name="iconKind">The object's kind, for the tab icon.</param>
+    /// <param name="key">Identifies the object, so a second Ctrl+B focuses the open tab.</param>
+    /// <param name="accent">The server's color.</param>
+    public SqlDocumentViewModel(string title = "SQL", string? iconKind = null, string? key = null, string? accent = null)
+    {
+        _title = title;
+        _iconKind = iconKind;
+        _accent = accent;
+        Key = key;
+    }
+
+    /// <summary>Gets the object's key (<c>server|node</c>).</summary>
+    public string? Key { get; }
 
     /// <summary>Gets or sets the action that opens the SQL in a Query Tool (set by the explorer).</summary>
     public Action<string>? OpenInQueryTool { get; set; }
@@ -77,8 +103,14 @@ public sealed partial class SqlDocumentViewModel : DocumentViewModel
     public Bengine.Enums.DatabaseProvider Provider { get; set; } = Bengine.Enums.DatabaseProvider.PostgreSql;
 
     /// <inheritdoc />
-    public override string Title => "SQL";
+    public override string Title => _title;
 
     /// <inheritdoc />
-    public override bool CanClose => false;
+    public override string? IconKind => _iconKind;
+
+    /// <inheritdoc />
+    public override string? AccentColor => _accent;
+
+    /// <inheritdoc />
+    public override string? ToolTip => $"{Breadcrumb} — DDL";
 }

@@ -22,7 +22,7 @@ public static class TreeIcons
     /// <returns>The item kind name.</returns>
     public static string ItemKindOf(string kind)
     {
-        if (!kind.EndsWith("Folder", StringComparison.Ordinal))
+        if (kind == "Folder" || !kind.EndsWith("Folder", StringComparison.Ordinal))
         {
             return kind;
         }
@@ -53,6 +53,10 @@ public static class TreeIcons
                 Rect(c, 1, 2, 9, 4, 1, "#8a9bb3");
                 Rect(c, 1, 7, 9, 4, 1, "#8a9bb3");
                 Rect(c, 6, 9, 9, 5, 1, "#b6c3d6");
+                break;
+            case "Folder":
+                PathFill(c, "M1.5 3.5 L6 3.5 L7.5 5 L14.5 5 L14.5 13 L1.5 13 Z", "#7f8ea3");
+                PathFill(c, "M1.5 6.5 L14.5 6.5 L14.5 13 L1.5 13 Z", "#9aa8bb");
                 break;
             case "Server":
                 Rack(c, connected ? ProviderColor(provider) : "#5b6576");

@@ -16,6 +16,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 public sealed partial class TreeItemViewModel : ObservableObject
 {
     private readonly ExplorerViewModel _owner;
+    private Func<Task<IReadOnlyList<TreeNode>?>>? _loader;
+    private string? _virtualKind;
     private bool _loaded;
     private Control? _icon;
 
@@ -66,7 +68,7 @@ public sealed partial class TreeItemViewModel : ObservableObject
     public bool IsError { get; private init; }
 
     /// <summary>Gets the node kind name used for icons and menus.</summary>
-    public string Kind => Group is not null ? "ServerGroup" : Node?.Ref.Kind.ToString() ?? "Placeholder";
+    public string Kind => Group is not null ? "ServerGroup" : _virtualKind ?? Node?.Ref.Kind.ToString() ?? "Placeholder";
 
     /// <summary>Gets the child rows.</summary>
     public ObservableCollection<TreeItemViewModel> Children { get; } = [];
@@ -80,7 +82,13 @@ public sealed partial class TreeItemViewModel : ObservableObject
     /// <summary>Gets the row's icon (rebuilt when the connection state changes).</summary>
     public Control? Icon => IsPlaceholder
         ? null
-        : _icon ??= TreeIcons.Create(Kind, Server?.Provider ?? Enums.DatabaseProvider.PostgreSql, IconConnected, Node?.Badge);
+        : _icon ??= TreeIcons.Create(IconKind, Server?.Provider ?? Enums.DatabaseProvider.PostgreSql, IconConnected, Node?.Badge);
+
+    /// <summary>Gets the kind whose icon the row shows: object-kind folders show a folder, as DataGrip does.</summary>
+    public string IconKind => _virtualKind is not null || Node?.IsFolder == true ? "Folder" : Kind;
+
+    /// <summary>Gets a value indicating whether the row groups objects (an object-kind or virtual folder).</summary>
+    public bool IsFolder => _virtualKind is not null || Node?.IsFolder == true;
 
     private bool IconConnected => Kind switch
     {
@@ -95,14 +103,14 @@ public sealed partial class TreeItemViewModel : ObservableObject
     /// <param name="count">The number of servers in the group.</param>
     /// <returns>The row.</returns>
     public static TreeItemViewModel ForGroup(ExplorerViewModel owner, string name, int count) =>
-        new(owner, null, name) { Group = name, CountText = $"({count})" };
+        new(owner, null, name) { Group = name, CountText = count.ToString(System.Globalization.CultureInfo.InvariantCulture) };
 
     /// <summary>Creates a registered-server row.</summary>
     /// <param name="owner">The explorer.</param>
     /// <param name="server">The server.</param>
     /// <param name="parent">The group row.</param>
     /// <returns>The row.</returns>
-    public static TreeItemViewModel ForServer(ExplorerViewModel owner, ServerProfile server, TreeItemViewModel parent)
+    public static TreeItemViewModel ForServer(ExplorerViewModel owner, ServerProfile server, TreeItemViewModel? parent)
     {
         var item = new TreeItemViewModel(owner, parent, server.Name)
         {
@@ -116,12 +124,12 @@ public sealed partial class TreeItemViewModel : ObservableObject
 
     private static TreeItemViewModel ForNode(ExplorerViewModel owner, ServerProfile server, TreeNode node, TreeItemViewModel parent)
     {
-        var item = new TreeItemViewModel(owner, parent, node.Label)
+        var item = new TreeItemViewModel(owner, parent, node.IsFolder ? FolderLabel(node) : node.Label)
         {
             Server = server,
             Node = node,
             Detail = node.Detail,
-            CountText = node.Count is { } count ? $"({count})" : null,
+            CountText = node.Count is { } count ? count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
         };
         if (node.HasChildren)
         {
@@ -136,7 +144,7 @@ public sealed partial class TreeItemViewModel : ObservableObject
 
     partial void OnIsExpandedChanged(bool value)
     {
-        if (value && !_loaded && Node is not null && !IsLoading)
+        if (value && !_loaded && (Node is not null || _loader is not null) && !IsLoading)
         {
             _ = LoadAsync();
         }
@@ -152,7 +160,7 @@ public sealed partial class TreeItemViewModel : ObservableObject
     /// <returns>A task that completes when the children are shown.</returns>
     public async Task LoadAsync()
     {
-        if (Server is null || Node is null)
+        if (Server is null || (Node is null && _loader is null))
         {
             return;
         }
@@ -160,8 +168,9 @@ public sealed partial class TreeItemViewModel : ObservableObject
         IsLoading = true;
         try
         {
-            var nodes = await _owner.FetchChildrenAsync(Server, Node.Ref);
-            if (nodes is null)
+            var nodes = _loader is not null ? await _loader() : await _owner.FetchChildrenAsync(Server, Node!.Ref);
+            var items = nodes is null ? null : await ArrangeAsync(nodes);
+            if (items is null)
             {
                 // The user cancelled the password prompt.
                 IsExpanded = false;
@@ -169,9 +178,9 @@ public sealed partial class TreeItemViewModel : ObservableObject
             }
 
             Children.Clear();
-            foreach (var node in nodes)
+            foreach (var item in items)
             {
-                Children.Add(ForNode(_owner, Server, node, this));
+                Children.Add(item);
             }
 
             _loaded = true;
@@ -261,7 +270,7 @@ public sealed partial class TreeItemViewModel : ObservableObject
     {
         _loaded = false;
         Children.Clear();
-        if (Node?.HasChildren == true)
+        if (Node?.HasChildren == true || _loader is not null)
         {
             Children.Add(Placeholder(_owner, this, "Loading…"));
         }

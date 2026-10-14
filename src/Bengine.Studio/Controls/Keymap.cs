@@ -47,11 +47,15 @@ public sealed class Keymap
         new("editor.toggleCase", "Toggle Case", "Editor", "Ctrl+Shift+U"),
         new("editor.replace", "Find and Replace", "Editor", "Ctrl+H"),
         new("tree.filter", "Filter the Tree", "Explorer", "Ctrl+F"),
-        new("tree.refresh", "Refresh", "Explorer", "F5"),
-        new("object.rename", "Rename…", "Explorer", "F2"),
+        new("tree.refresh", "Refresh", "Explorer", "Ctrl+F5, F5"),
+        new("object.open", "Edit (Open Data or Source)", "Explorer", "F4"),
+        new("object.ddl", "Go to DDL", "Explorer", "Ctrl+B"),
+        new("object.quickDoc", "Quick Documentation", "Explorer", "Ctrl+Q"),
+        new("object.console", "Jump to Query Console", "Explorer", "Ctrl+Shift+F10"),
+        new("object.copyReference", "Copy Reference", "Explorer", "Ctrl+Alt+Shift+C"),
+        new("object.rename", "Rename…", "Explorer", "Shift+F6, F2"),
         new("object.drop", "Drop…", "Explorer", "Delete"),
         new("object.findUsages", "Find Usages", "Explorer", "Alt+F7"),
-        new("object.ddl", "Show DDL", "Explorer", "Ctrl+B"),
     ];
 
     private readonly Dictionary<string, IReadOnlyList<KeyGesture>> _gestures = new(StringComparer.Ordinal);
