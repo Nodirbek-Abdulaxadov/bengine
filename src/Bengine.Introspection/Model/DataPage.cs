@@ -12,6 +12,9 @@ public sealed record DataPage
     /// <summary>Gets the column names in result order.</summary>
     public required IReadOnlyList<string> Columns { get; init; }
 
+    /// <summary>Gets the page's query without paging, with values inlined, for display and "open in console".</summary>
+    public string Sql { get; init; } = string.Empty;
+
     /// <summary>Gets the database type name of each column (for example <c>integer</c>, <c>timestamp with time zone</c>), aligned with <see cref="Columns"/>.</summary>
     public IReadOnlyList<string> ColumnTypes { get; init; } = [];
 

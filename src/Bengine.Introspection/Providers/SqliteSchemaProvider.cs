@@ -67,6 +67,7 @@ public sealed class SqliteSchemaProvider : SchemaProviderBase
         var primaryKey = BuildPrimaryKey(table.Name, columns);
         var foreignKeys = await ReadForeignKeysAsync(table.Name, cancellationToken).ConfigureAwait(false);
         var indexes = await ReadIndexesAsync(table.Name, cancellationToken).ConfigureAwait(false);
+        var checks = await ReadChecksAsync(table.Name, cancellationToken).ConfigureAwait(false);
 
         return new Table
         {
@@ -76,7 +77,31 @@ public sealed class SqliteSchemaProvider : SchemaProviderBase
             PrimaryKey = primaryKey,
             ForeignKeys = foreignKeys,
             Indexes = indexes,
+            CheckConstraints = checks,
         };
+    }
+
+    // SQLite keeps no catalog of check constraints; read them back from the table's DDL.
+    private async Task<IReadOnlyList<CheckConstraint>> ReadChecksAsync(string tableName, CancellationToken cancellationToken)
+    {
+        var ddl = (await QueryAsync(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = @t",
+            reader => StringOrNull(reader, "sql"),
+            cancellationToken,
+            ("@t", tableName)).ConfigureAwait(false)).FirstOrDefault();
+        if (ddl is null || !ddl.Contains("CHECK", StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        try
+        {
+            return Bengine.Parsing.SqlSchemaParser.ParseAs(ddl, DatabaseProvider.Sqlite).Tables.FirstOrDefault()?.CheckConstraints ?? [];
+        }
+        catch (Bengine.Parsing.SqlParseException)
+        {
+            return [];
+        }
     }
 
     private sealed record ColumnInfo(Column Column, int PrimaryKeyPosition, bool IsIntegerType);
@@ -109,6 +134,7 @@ public sealed class SqliteSchemaProvider : SchemaProviderBase
                     Type = typeOptions,
                     Nullability = notNull ? Nullability.NotNull : Nullability.Nullable,
                     Default = ParseDefault(defaultText),
+                    ProviderOptions = NativeType(DatabaseProvider.Sqlite, nativeType),
                 };
 
                 var isInteger = typeOptions.DataType
@@ -266,7 +292,10 @@ public sealed class SqliteSchemaProvider : SchemaProviderBase
 
             indexes.Add(new Index
             {
-                Name = row.Name,
+                // A UNIQUE constraint's index has a reserved name no statement may use; name it after its columns.
+                Name = row.Name.StartsWith("sqlite_autoindex_", StringComparison.Ordinal)
+                    ? $"uq_{tableName}_{string.Join('_', keyColumns.Select(c => c.ColumnName))}"
+                    : row.Name,
                 Type = row.Unique ? IndexType.Unique : IndexType.NonUnique,
                 Columns = keyColumns,
             });
@@ -354,4 +383,11 @@ public sealed class SqliteSchemaProvider : SchemaProviderBase
             ? (baseName, first, first, null)
             : (baseName, null, first, second);
     }
+
+    /// <inheritdoc />
+    protected override async Task<IReadOnlyList<View>> ReadViewsAsync(string? schema, CancellationToken cancellationToken) =>
+        await QueryAsync(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'view' ORDER BY name",
+            reader => new View { Name = String(reader, "name"), Definition = ViewBody(StringOrNull(reader, "sql") ?? string.Empty) },
+            cancellationToken).ConfigureAwait(false);
 }

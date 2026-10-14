@@ -1,0 +1,80 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Bengine.Studio.ViewModels"
+        xmlns:cat="clr-namespace:Bengine.Introspection.Catalog;assembly=Bengine.Introspection"
+        xmlns:c="clr-namespace:Bengine.Studio.Controls"
+        x:Class="Bengine.Studio.Views.ImportDataDialog"
+        x:DataType="vm:ImportDataViewModel"
+        Title="Import Data from File" Width="1040" Height="720" MinWidth="760" MinHeight="520"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource Panel}" FontSize="13">
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="16,10">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+          <Button Classes="ghost" Content="Cancel" Command="{Binding CancelCommand}" />
+          <Button Classes="primary" Content="Import" Command="{Binding ImportCommand}" IsEnabled="{Binding !IsBusy}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <ProgressBar IsIndeterminate="True" Width="80" IsVisible="{Binding IsBusy}" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="760"
+                     Foreground="{Binding IsError, Converter={x:Static c:Converters.StatusBrush}}" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <StackPanel DockPanel.Dock="Top" Margin="16,12,16,6" Spacing="8">
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Classes="ghost" Content="Browse…" Command="{Binding BrowseCommand}" Margin="6,0,0,0" />
+        <TextBox Text="{Binding FilePath}" Watermark="CSV / TSV file" />
+      </DockPanel>
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <TextBlock Classes="dim" Text="Delimiter" VerticalAlignment="Center" />
+        <ComboBox ItemsSource="{Binding Delimiters}" SelectedItem="{Binding Delimiter}" MinWidth="130" />
+        <CheckBox Content="First row is a header" IsChecked="{Binding HasHeader}" />
+        <CheckBox Content="Empty values are NULL" IsChecked="{Binding EmptyIsNull}" />
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <RadioButton GroupName="target" Content="New table" IsChecked="{Binding CreateTable}" />
+        <TextBox Text="{Binding NewTableName}" Width="220" IsEnabled="{Binding CreateTable}" FontFamily="{StaticResource Mono}" />
+        <RadioButton GroupName="target" Content="Existing table" IsChecked="{Binding !CreateTable}" Margin="16,0,0,0" />
+        <ComboBox ItemsSource="{Binding Tables}" SelectedItem="{Binding ExistingTable}" MinWidth="240" IsEnabled="{Binding !CreateTable}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate DataType="cat:CatalogRelation">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+      </StackPanel>
+    </StackPanel>
+
+    <Grid RowDefinitions="*,4,*" Margin="16,0,16,8">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="Columns" Classes="dim" Margin="0,4" />
+        <DataGrid ItemsSource="{Binding Mappings}" AutoGenerateColumns="False" HeadersVisibility="Column" CanUserSortColumns="False" RowHeight="30">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="File column" Binding="{Binding Header}" IsReadOnly="True" Width="180" />
+            <DataGridTextColumn Header="Sample" Binding="{Binding Sample}" IsReadOnly="True" Width="200" Foreground="#8b98ab" />
+            <DataGridTemplateColumn Header="Into column" Width="220">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate DataType="vm:MappingRow">
+                  <Panel>
+                    <TextBox Text="{Binding Target}" BorderThickness="0" Background="Transparent" FontFamily="{StaticResource Mono}"
+                             IsVisible="{Binding $parent[Window].((vm:ImportDataViewModel)DataContext).CreateTable}" />
+                    <ComboBox SelectedItem="{Binding Target}" ItemsSource="{Binding $parent[Window].((vm:ImportDataViewModel)DataContext).TargetColumns}" BorderThickness="0" Background="Transparent" HorizontalAlignment="Stretch"
+                              IsVisible="{Binding !$parent[Window].((vm:ImportDataViewModel)DataContext).CreateTable}" />
+                  </Panel>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
+            <DataGridTextColumn Header="Type (new table)" Binding="{Binding Type}" Width="*" FontFamily="{StaticResource Mono}" Foreground="#82aaff" />
+          </DataGrid.Columns>
+        </DataGrid>
+      </DockPanel>
+      <GridSplitter Grid.Row="1" Background="{StaticResource LineSoft}" ResizeDirection="Rows" />
+      <DockPanel Grid.Row="2">
+        <TextBlock DockPanel.Dock="Top" Text="{Binding PreviewInfo}" Classes="dim" Margin="0,4" />
+        <DataGrid x:Name="Preview" ItemsSource="{Binding PreviewRows}" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="All" />
+      </DockPanel>
+    </Grid>
+  </DockPanel>
+</Window>

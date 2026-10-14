@@ -22,4 +22,10 @@ public sealed class IntrospectionException : Exception
         : base(message, innerException)
     {
     }
+
+    /// <summary>
+    /// Gets the 1-based character offset in the statement where the server
+    /// located the error, when it reports one (PostgreSQL syntax and name errors).
+    /// </summary>
+    public int? Position { get; init; }
 }

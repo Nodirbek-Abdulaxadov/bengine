@@ -18,9 +18,7 @@
       </DockPanel>
     </Border>
     <Panel>
-      <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Background="{StaticResource Bg}">
-        <SelectableTextBlock x:Name="Code" FontFamily="{StaticResource Mono}" FontSize="12.5" LineHeight="20" Margin="16,12" Foreground="#cdd7e6" />
-      </ScrollViewer>
+      <c:SqlEditor x:Name="Code" IsReadOnly="True" HighlightStatement="False" />
       <TextBlock Text="{Binding Message}" Classes="dim" HorizontalAlignment="Center" VerticalAlignment="Center"
                  IsVisible="{Binding Message, Converter={x:Static ObjectConverters.IsNotNull}}" />
     </Panel>

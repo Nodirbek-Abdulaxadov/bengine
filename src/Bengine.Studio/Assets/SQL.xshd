@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<!-- SQL highlighting for the Studio editors: keywords, types, literals, comments,
+     quoted identifiers, and query parameters across PostgreSQL, MySQL, SQL Server, and SQLite. -->
+<SyntaxDefinition name="SQL" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" foreground="#637087" fontStyle="italic" />
+  <Color name="String" foreground="#c3e88d" />
+  <Color name="Identifier" foreground="#ffcb6b" />
+  <Color name="Number" foreground="#f78c6c" />
+  <Color name="Keyword" foreground="#c792ea" fontWeight="bold" />
+  <Color name="Type" foreground="#82aaff" />
+  <Color name="Function" foreground="#89ddff" />
+  <Color name="Parameter" foreground="#ff9cac" fontWeight="bold" />
+
+  <RuleSet ignoreCase="true">
+    <Span color="Comment" begin="--" />
+    <Span color="Comment" multiline="true" begin="/\*" end="\*/" />
+    <Span color="String" multiline="true" begin="\b[EeNnBbXx]?'|'" end="'" />
+    <Span color="String" multiline="true" begin="\$\$" end="\$\$" />
+    <Span color="String" multiline="true" begin="\$[A-Za-z_][A-Za-z0-9_]*\$" end="\$[A-Za-z_][A-Za-z0-9_]*\$" />
+    <Span color="Identifier" begin="&quot;" end="&quot;" />
+    <Span color="Identifier" begin="`" end="`" />
+    <Span color="Identifier" begin="(?&lt;=(FROM|JOIN|INTO|UPDATE|TABLE|ON|BY|SELECT|WHERE|AND|OR|,|\(|\.|=|\s)\s*)\[" end="\]" />
+
+    <Rule color="Parameter">\$\{[^}]*\}|(?&lt;![:\w]):[A-Za-z_][A-Za-z0-9_]*</Rule>
+
+    <Keywords color="Keyword">
+      <Word>ABORT</Word><Word>ACTION</Word><Word>ADD</Word><Word>AFTER</Word><Word>ALL</Word><Word>ALTER</Word><Word>ALWAYS</Word>
+      <Word>ANALYZE</Word><Word>AND</Word><Word>ANY</Word><Word>APPLY</Word><Word>AS</Word><Word>ASC</Word><Word>ATTACH</Word>
+      <Word>AUTHORIZATION</Word><Word>AUTOINCREMENT</Word><Word>AUTO_INCREMENT</Word><Word>BEFORE</Word><Word>BEGIN</Word>
+      <Word>BETWEEN</Word><Word>BREAK</Word><Word>BY</Word><Word>CACHE</Word><Word>CASCADE</Word><Word>CASE</Word><Word>CAST</Word>
+      <Word>CATCH</Word><Word>CHECK</Word><Word>CLUSTERED</Word><Word>COLLATE</Word><Word>COLUMN</Word><Word>COMMENT</Word>
+      <Word>COMMIT</Word><Word>CONCURRENTLY</Word><Word>CONFLICT</Word><Word>CONSTRAINT</Word><Word>CONTINUE</Word><Word>COPY</Word>
+      <Word>CREATE</Word><Word>CROSS</Word><Word>CURRENT</Word><Word>CURRENT_DATE</Word><Word>CURRENT_TIME</Word>
+      <Word>CURRENT_TIMESTAMP</Word><Word>CURRENT_USER</Word><Word>CURSOR</Word><Word>CYCLE</Word><Word>DATABASE</Word>
+      <Word>DECLARE</Word><Word>DEFAULT</Word><Word>DEFERRABLE</Word><Word>DEFINER</Word><Word>DELETE</Word><Word>DELIMITER</Word>
+      <Word>DESC</Word><Word>DESCRIBE</Word><Word>DETACH</Word><Word>DISTINCT</Word><Word>DO</Word><Word>DOMAIN</Word><Word>DROP</Word>
+      <Word>DUPLICATE</Word><Word>EACH</Word><Word>ELSE</Word><Word>END</Word><Word>ENGINE</Word><Word>ENUM</Word><Word>ESCAPE</Word>
+      <Word>EVENT</Word><Word>EXCEPT</Word><Word>EXEC</Word><Word>EXECUTE</Word><Word>EXISTS</Word><Word>EXPLAIN</Word>
+      <Word>EXTENSION</Word><Word>FALSE</Word><Word>FETCH</Word><Word>FILTER</Word><Word>FIRST</Word><Word>FOLLOWING</Word>
+      <Word>FOR</Word><Word>FOREIGN</Word><Word>FROM</Word><Word>FULL</Word><Word>FUNCTION</Word><Word>GENERATED</Word><Word>GLOB</Word>
+      <Word>GO</Word><Word>GRANT</Word><Word>GROUP</Word><Word>HANDLER</Word><Word>HAVING</Word><Word>IDENTITY</Word><Word>IF</Word>
+      <Word>IGNORE</Word><Word>ILIKE</Word><Word>IMMUTABLE</Word><Word>IN</Word><Word>INCLUDE</Word><Word>INCREMENT</Word>
+      <Word>INDEX</Word><Word>INHERITS</Word><Word>INNER</Word><Word>INSERT</Word><Word>INSTEAD</Word><Word>INTERSECT</Word>
+      <Word>INTO</Word><Word>IS</Word><Word>JOIN</Word><Word>KEY</Word><Word>LANGUAGE</Word><Word>LAST</Word><Word>LATERAL</Word>
+      <Word>LEFT</Word><Word>LIKE</Word><Word>LIMIT</Word><Word>LOCK</Word><Word>LOOP</Word><Word>MATCHED</Word><Word>MATERIALIZED</Word>
+      <Word>MAXVALUE</Word><Word>MERGE</Word><Word>MINVALUE</Word><Word>MODIFY</Word><Word>NATURAL</Word><Word>NEXT</Word><Word>NO</Word>
+      <Word>NOCHECK</Word><Word>NOLOCK</Word><Word>NONCLUSTERED</Word><Word>NOT</Word><Word>NOTHING</Word><Word>NOWAIT</Word>
+      <Word>NULL</Word><Word>NULLS</Word><Word>OF</Word><Word>OFFSET</Word><Word>ON</Word><Word>ONLY</Word><Word>OPTION</Word>
+      <Word>OR</Word><Word>ORDER</Word><Word>OUTER</Word><Word>OUTPUT</Word><Word>OVER</Word><Word>OWNER</Word><Word>PARTITION</Word>
+      <Word>PERCENT</Word><Word>PIVOT</Word><Word>PRAGMA</Word><Word>PRECEDING</Word><Word>PRIMARY</Word><Word>PRINT</Word>
+      <Word>PROC</Word><Word>PROCEDURE</Word><Word>RAISE</Word><Word>RAISERROR</Word><Word>RANGE</Word><Word>RECURSIVE</Word>
+      <Word>REFERENCES</Word><Word>REFRESH</Word><Word>REGEXP</Word><Word>REINDEX</Word><Word>RELEASE</Word><Word>RENAME</Word>
+      <Word>REPEAT</Word><Word>REPLACE</Word><Word>RESTRICT</Word><Word>RETURN</Word><Word>RETURNING</Word><Word>RETURNS</Word>
+      <Word>REVOKE</Word><Word>RIGHT</Word><Word>ROLE</Word><Word>ROLLBACK</Word><Word>ROW</Word><Word>ROWID</Word><Word>ROWS</Word>
+      <Word>SAVEPOINT</Word><Word>SCHEMA</Word><Word>SECURITY</Word><Word>SELECT</Word><Word>SEQUENCE</Word><Word>SET</Word>
+      <Word>SHOW</Word><Word>SIMILAR</Word><Word>SKIP</Word><Word>SOME</Word><Word>STABLE</Word><Word>START</Word><Word>STORED</Word>
+      <Word>STRICT</Word><Word>TABLE</Word><Word>TABLES</Word><Word>TABLESPACE</Word><Word>TEMP</Word><Word>TEMPORARY</Word>
+      <Word>THEN</Word><Word>THROW</Word><Word>TIES</Word><Word>TO</Word><Word>TOP</Word><Word>TRAN</Word><Word>TRANSACTION</Word>
+      <Word>TRIGGER</Word><Word>TRUE</Word><Word>TRUNCATE</Word><Word>TRY</Word><Word>TYPE</Word><Word>UNBOUNDED</Word>
+      <Word>UNION</Word><Word>UNIQUE</Word><Word>UNLOGGED</Word><Word>UNSIGNED</Word><Word>UPDATE</Word><Word>USE</Word>
+      <Word>USING</Word><Word>VACUUM</Word><Word>VALUES</Word><Word>VIEW</Word><Word>VIRTUAL</Word><Word>VOLATILE</Word>
+      <Word>WHEN</Word><Word>WHERE</Word><Word>WHILE</Word><Word>WINDOW</Word><Word>WITH</Word><Word>WITHIN</Word><Word>WITHOUT</Word>
+    </Keywords>
+
+    <Keywords color="Type">
+      <Word>bigint</Word><Word>bigserial</Word><Word>binary</Word><Word>bit</Word><Word>blob</Word><Word>bool</Word><Word>boolean</Word>
+      <Word>bytea</Word><Word>char</Word><Word>character</Word><Word>cidr</Word><Word>date</Word><Word>datetime</Word><Word>datetime2</Word>
+      <Word>datetimeoffset</Word><Word>decimal</Word><Word>double</Word><Word>float</Word><Word>inet</Word><Word>int</Word>
+      <Word>int2</Word><Word>int4</Word><Word>int8</Word><Word>integer</Word><Word>interval</Word><Word>json</Word><Word>jsonb</Word>
+      <Word>longtext</Word><Word>mediumint</Word><Word>money</Word><Word>nchar</Word><Word>ntext</Word><Word>numeric</Word>
+      <Word>nvarchar</Word><Word>precision</Word><Word>real</Word><Word>serial</Word><Word>smallint</Word><Word>smallserial</Word>
+      <Word>text</Word><Word>time</Word><Word>timestamp</Word><Word>timestamptz</Word><Word>tinyint</Word><Word>tinytext</Word>
+      <Word>uniqueidentifier</Word><Word>uuid</Word><Word>varbinary</Word><Word>varchar</Word><Word>varying</Word><Word>xml</Word>
+      <Word>zone</Word>
+    </Keywords>
+
+    <Rule color="Function">\b[A-Za-z_][A-Za-z0-9_]*(?=\s*\()</Rule>
+    <Rule color="Number">\b0[xX][0-9a-fA-F]+|\b\d+(\.\d+)?([eE][+-]?\d+)?\b</Rule>
+  </RuleSet>
+</SyntaxDefinition>

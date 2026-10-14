@@ -1,0 +1,75 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Bengine.Studio.ViewModels"
+        xmlns:c="clr-namespace:Bengine.Studio.Controls"
+        x:Class="Bengine.Studio.Views.BackupDialog"
+        x:DataType="vm:BackupViewModel"
+        Title="{Binding Title}" Width="900" Height="640" MinWidth="680" MinHeight="460"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource Panel}" FontSize="13">
+  <Window.Styles>
+    <Style Selector="ListBox#LogList ListBoxItem">
+      <Setter Property="Padding" Value="10,1" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+  </Window.Styles>
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="16,10">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+          <Button Classes="ghost" Content="Close" Command="{Binding CancelCommand}" IsVisible="{Binding !IsBusy}" />
+          <Button Classes="ghost danger" Content="■ Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" />
+          <Button Classes="primary" Content="{Binding RunText}" Command="{Binding RunCommand}" IsEnabled="{Binding !IsBusy}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <ProgressBar Width="120" Minimum="0" Maximum="1" Value="{Binding Progress}" IsIndeterminate="{Binding IsBusy}" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="560"
+                     Foreground="{Binding IsError, Converter={x:Static c:Converters.StatusBrush}}" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <StackPanel DockPanel.Dock="Top" Margin="16,12,16,6" Spacing="10">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <TextBlock Classes="dim" Text="Method" VerticalAlignment="Center" Width="90" />
+        <ComboBox ItemsSource="{Binding Methods}" SelectedItem="{Binding Method}" MinWidth="320" />
+        <TextBlock Classes="dim" Text="Format" VerticalAlignment="Center" Margin="12,0,0,0" IsVisible="{Binding ShowFormat}" />
+        <ComboBox ItemsSource="{Binding Formats}" SelectedItem="{Binding Format}" MinWidth="120" IsVisible="{Binding ShowFormat}" />
+      </StackPanel>
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Left" Classes="dim" Text="File" VerticalAlignment="Center" Width="100" />
+        <Button DockPanel.Dock="Right" Classes="ghost" Content="Browse…" Command="{Binding BrowseCommand}" IsVisible="{Binding CanBrowse}" Margin="6,0,0,0" />
+        <TextBox Text="{Binding Path}" FontFamily="{StaticResource Mono}" />
+      </DockPanel>
+      <TextBlock Classes="faint" FontSize="11.5" Margin="100,-4,0,0" Text="{Binding PathHint}" />
+      <WrapPanel IsVisible="{Binding ShowContent}" Margin="100,0,0,0">
+        <CheckBox Content="Schema only" IsChecked="{Binding SchemaOnly}" Margin="0,0,16,0" />
+        <CheckBox Content="Data only" IsChecked="{Binding DataOnly}" Margin="0,0,16,0" />
+        <CheckBox Content="Drop objects first (clean)" IsChecked="{Binding Clean}" IsVisible="{Binding ShowTools}" Margin="0,0,16,0" />
+        <CheckBox Content="No owner / privileges" IsChecked="{Binding NoOwner}" IsVisible="{Binding ShowFormat}" />
+      </WrapPanel>
+      <WrapPanel IsVisible="{Binding ShowScriptOptions}" Margin="100,0,0,0">
+        <CheckBox Content="Stop at the first error" IsChecked="{Binding StopOnError}" Margin="0,0,16,0" />
+        <CheckBox Content="One transaction" IsChecked="{Binding SingleTransaction}" IsVisible="{Binding !ShowTools}" Margin="0,0,16,0" />
+        <CheckBox Content="Drop objects first (clean)" IsChecked="{Binding Clean}" IsVisible="{Binding ShowTools}" Margin="0,0,16,0" />
+        <CheckBox Content="No owner" IsChecked="{Binding NoOwner}" IsVisible="{Binding ShowTools}" />
+      </WrapPanel>
+      <DockPanel IsVisible="{Binding ShowTools}">
+        <TextBlock DockPanel.Dock="Left" Classes="dim" Text="Client tools" VerticalAlignment="Center" Width="100" />
+        <TextBox Text="{Binding ToolDirectory}" Watermark="Folder of the client tools — empty searches the PATH" FontFamily="{StaticResource Mono}" />
+      </DockPanel>
+      <Border Background="{StaticResource Bg}" BorderBrush="{StaticResource LineSoft}" BorderThickness="1" CornerRadius="3" Padding="10,8">
+        <TextBlock Classes="mono" FontSize="12" TextWrapping="Wrap" Text="{Binding Command}" Foreground="#82aaff" />
+      </Border>
+    </StackPanel>
+
+    <Border Margin="16,4,16,10" BorderBrush="{StaticResource Line}" BorderThickness="1">
+      <ListBox x:Name="LogList" ItemsSource="{Binding Log}" Background="{StaticResource Bg}">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Classes="mono" FontSize="12" TextWrapping="Wrap" Text="{Binding}" />
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+  </DockPanel>
+</Window>

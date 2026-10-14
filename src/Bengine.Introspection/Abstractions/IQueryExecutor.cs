@@ -18,4 +18,29 @@ public interface IQueryExecutor
     /// <returns>The result set or affected-row count, with timing.</returns>
     /// <exception cref="Introspection.IntrospectionException">The statement failed.</exception>
     Task<QueryResult> ExecuteAsync(string sql, int maxRows = 1000, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes SQL and returns every result set it produces — a SQL Server batch
+    /// or a procedure can return several — or a single affected-row result when
+    /// it returns none.
+    /// </summary>
+    /// <param name="sql">The SQL to run.</param>
+    /// <param name="maxRows">The most rows to materialize per result set.</param>
+    /// <param name="cancellationToken">Cancels the statement on the server.</param>
+    /// <returns>The results, never empty.</returns>
+    /// <exception cref="Introspection.IntrospectionException">The statement failed.</exception>
+    /// <exception cref="OperationCanceledException">The statement was cancelled.</exception>
+    Task<IReadOnlyList<QueryResult>> ExecuteAllAsync(string sql, int maxRows = 1000, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Streams the rows of a query one at a time, without holding them all —
+    /// for dumps and comparisons of whole tables. Values are as the console
+    /// shows them (PostgreSQL in its text form). The connection is busy until
+    /// the enumeration ends.
+    /// </summary>
+    /// <param name="sql">The query.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The rows.</returns>
+    /// <exception cref="Introspection.IntrospectionException">The query failed.</exception>
+    IAsyncEnumerable<object?[]> StreamAsync(string sql, CancellationToken cancellationToken = default);
 }

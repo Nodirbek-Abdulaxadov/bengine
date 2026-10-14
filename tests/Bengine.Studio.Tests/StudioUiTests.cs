@@ -66,24 +66,111 @@ public sealed class StudioUiTests
             return;
         }
 
+        // A scratch database, so the configured one is never written to.
         var parts = spec.Split(';');
-        var dir = Directory.CreateTempSubdirectory("bengine_studio_pg_").FullName;
-        var store = new ServerStore(Path.Combine(dir, "servers.json"));
-        store.Upsert(new ServerProfile
+        var scratch = $"bengine_ui_{Guid.NewGuid():N}"[..24];
+        var admin = new Npgsql.NpgsqlConnectionStringBuilder
         {
-            Name = "pg-live",
-            Provider = DatabaseProvider.PostgreSql,
-            Host = parts[0],
-            Port = int.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture),
-            MaintenanceDatabase = parts[2],
-            Username = parts[3],
-            Password = parts[4],
-            SavePassword = true,
-        });
-        store.Upsert(new ServerProfile { Name = "remote-pg", Provider = DatabaseProvider.PostgreSql, Host = "203.0.113.1", Port = 5432, Username = "admin" });
+            Host = parts[0], Port = int.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture), Database = parts[2], Username = parts[3], Password = parts[4],
+        }.ConnectionString;
+        await Execute(admin, $"CREATE DATABASE {scratch}");
+        try
+        {
+            await Execute(new Npgsql.NpgsqlConnectionStringBuilder(admin) { Database = scratch }.ConnectionString, """
+                CREATE TABLE "Users" (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, email text NOT NULL, roles text[], seen timestamptz DEFAULT now());
+                INSERT INTO "Users" (email, roles) VALUES ('a@x.io', '{admin}'), ('b@x.io', '{}');
+                """);
 
-        await WalkAsync(store, "pg", ["Databases", parts[2], "Schemas", "public", "Tables"], "Users", parts[2],
-            "SELECT table_schema, count(*) AS tables\nFROM information_schema.tables\nGROUP BY 1\nORDER BY 2 DESC;");
+            var dir = Directory.CreateTempSubdirectory("bengine_studio_pg_").FullName;
+            var store = new ServerStore(Path.Combine(dir, "servers.json"));
+            store.Upsert(new ServerProfile
+            {
+                Name = "pg-live",
+                Provider = DatabaseProvider.PostgreSql,
+                Host = parts[0],
+                Port = int.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture),
+                MaintenanceDatabase = scratch,
+                Username = parts[3],
+                Password = parts[4],
+                SavePassword = true,
+            });
+            store.Upsert(new ServerProfile { Name = "remote-pg", Provider = DatabaseProvider.PostgreSql, Host = "203.0.113.1", Port = 5432, Username = "admin" });
+
+            await WalkAsync(store, "pg", ["Databases", scratch, "Schemas", "public", "Tables"], "Users", scratch,
+                "SELECT table_schema, count(*) AS tables\nFROM information_schema.tables\nGROUP BY 1\nORDER BY 2 DESC;");
+        }
+        finally
+        {
+            Npgsql.NpgsqlConnection.ClearAllPools();
+            await Execute(admin, $"DROP DATABASE IF EXISTS {scratch} WITH (FORCE)");
+        }
+    }
+
+    private static async Task Execute(string connectionString, string sql)
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    [AvaloniaFact]
+    public async Task Shows_live_postgres_activity_and_server_dialog_when_configured()
+    {
+        if (Environment.GetEnvironmentVariable("BENGINE_TEST_PG") is not { Length: > 0 } spec)
+        {
+            return;
+        }
+
+        var parts = spec.Split(';');
+        var dir = Directory.CreateTempSubdirectory("bengine_studio_act_").FullName;
+        var store = new ServerStore(Path.Combine(dir, "servers.json"));
+        var server = store.Upsert(new ServerProfile
+        {
+            Name = "pg-live", Provider = DatabaseProvider.PostgreSql, Host = parts[0], Port = int.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture),
+            MaintenanceDatabase = parts[2], Username = parts[3], Password = parts[4], SavePassword = true, Color = "#e05d5d",
+            SshHost = "bastion.example.com", SshUser = "deploy", SshKeyFile = "~/.ssh/id_ed25519", SslMode = "require",
+        });
+        var direct = server with { SshHost = null, SslMode = null };
+
+        var table = $"bengine_act_{Guid.NewGuid():N}"[..22];
+        await using var setup = await Bengine.Introspection.Tree.ObjectExplorer.OpenSessionAsync(direct, null, null);
+        await setup.Query.ExecuteAllAsync($"CREATE TABLE {table} (id int PRIMARY KEY, v int); INSERT INTO {table} VALUES (1, 1)");
+        await using var holder = await Bengine.Introspection.Tree.ObjectExplorer.OpenSessionAsync(direct, null, null);
+        await using var waiter = await Bengine.Introspection.Tree.ObjectExplorer.OpenSessionAsync(direct, null, null);
+        await holder.BeginTransactionAsync();
+        await holder.Query.ExecuteAllAsync($"UPDATE {table} SET v = 2 WHERE id = 1");
+        var blocked = waiter.Query.ExecuteAllAsync($"UPDATE {table} SET v = 3 WHERE id = 1");
+        try
+        {
+            store.Upsert(direct);
+            var window = new MainWindow(store) { Width = 1440, Height = 900 };
+            var vm = new ExplorerViewModel(store) { Dialogs = window };
+            window.DataContext = vm;
+            window.Show();
+            var activity = vm.OpenActivity(store.List()[0]);
+            await Until(() => activity.Sessions.Any(s => s.BlockedBy is not null), 15000);
+            activity.Selected = activity.Sessions.First(s => s.BlockedBy is not null);
+            Shot(window, "pg-6-activity");
+
+            var form = new ServerFormViewModel(store, server) { TabIndex = 3 };
+            var dialog = new ServerDialog { DataContext = form };
+            dialog.Show();
+            Shot(dialog, "pg-7-server-ssh");
+            form.TabIndex = 2;
+            Shot(dialog, "pg-8-server-ssl");
+            dialog.Close();
+
+            await activity.CancelQueryCommand.ExecuteAsync(null);
+            await Assert.ThrowsAnyAsync<Exception>(() => blocked);
+            window.Close();
+        }
+        finally
+        {
+            await holder.RollbackAsync();
+            await setup.Query.ExecuteAllAsync($"DROP TABLE {table}");
+        }
     }
 
     [AvaloniaFact]
@@ -167,10 +254,16 @@ public sealed class StudioUiTests
 
         await vm.OpenQueryAsync(tableItem.Server!, database, sql);
         var query = vm.Tabs.OfType<QueryDocumentViewModel>().Single();
-        await query.ExecuteAsync(null);
-        await Until(() => query.Rows.Count > 0 && !query.IsBusy);
+        await query.ExecuteAsync(query.QueryText);
+        await Until(() => query.Results.Count > 0 && !query.IsBusy);
         Assert.False(query.IsError, query.Status);
         Shot(window, $"{prefix}-4-query");
+
+        await query.ExplainAsync(sql, 0, analyze: true);
+        await Until(() => !query.IsBusy);
+        Assert.False(query.IsError, query.Status);
+        Assert.NotNull(query.Plan);
+        Shot(window, $"{prefix}-5-plan");
 
         window.Close();
     }

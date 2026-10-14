@@ -137,10 +137,56 @@ public abstract class SqlGeneratorBase : ISqlGenerator
                + Environment.NewLine + view.Definition.TrimEnd().TrimEnd(';') + ";";
     }
 
+    /// <summary>Gets the dialect.</summary>
+    public SqlDialect Dialect => _dialect;
+
+    /// <summary>
+    /// Renders a column's type: its native spelling when the column carries one
+    /// for this provider (an introspected column), otherwise the type mapped from
+    /// the logical model.
+    /// </summary>
+    /// <param name="column">The column.</param>
+    /// <returns>The type text.</returns>
+    public string ColumnType(Column column) =>
+        column.ProviderOptions.TryGet(Provider, out var native) && native?.NativeTypeName is { Length: > 0 } name
+            ? name
+            : _mapper.RenderProviderType(Provider, column.Type);
+
+    /// <summary>Renders a full column definition: name, type, nullability, default, identity, or generation.</summary>
+    /// <param name="column">The column.</param>
+    /// <returns>The definition.</returns>
+    public string ColumnDefinition(Column column) => RenderColumn(column);
+
+    /// <summary>Renders a foreign key as a table constraint clause.</summary>
+    /// <param name="foreignKey">The key.</param>
+    /// <returns>The <c>CONSTRAINT … FOREIGN KEY …</c> clause.</returns>
+    public string ForeignKeyConstraint(ForeignKey foreignKey) => RenderForeignKey(foreignKey);
+
+    /// <summary>Renders a check constraint clause.</summary>
+    /// <param name="check">The constraint.</param>
+    /// <returns>The <c>CONSTRAINT … CHECK (…)</c> clause.</returns>
+    public string CheckConstraintClause(CheckConstraint check) => RenderCheck(check);
+
+    /// <summary>Renders a quoted, optionally schema-qualified name.</summary>
+    /// <param name="schema">The schema, or <c>null</c>.</param>
+    /// <param name="name">The name.</param>
+    /// <returns>The qualified name.</returns>
+    public string Qualify(string? schema, string name) => QualifiedName(schema, name);
+
+    /// <summary>Quotes an identifier.</summary>
+    /// <param name="identifier">The identifier.</param>
+    /// <returns>The quoted identifier.</returns>
+    public string Quote(string identifier) => _dialect.QuoteIdentifier(identifier);
+
+    /// <summary>Renders a comma-separated list of quoted identifiers.</summary>
+    /// <param name="names">The identifiers.</param>
+    /// <returns>The list.</returns>
+    public string QuoteList(IEnumerable<string> names) => JoinQuoted(names);
+
     private string RenderColumn(Column column)
     {
         var builder = new StringBuilder(_dialect.QuoteIdentifier(column.Name));
-        builder.Append(' ').Append(_mapper.RenderProviderType(Provider, column.Type));
+        builder.Append(' ').Append(ColumnType(column));
 
         if (column.Generated is { } generated
             && _dialect.Supports(SqlDialectFeature.GeneratedColumns))
@@ -152,7 +198,9 @@ public abstract class SqlGeneratorBase : ISqlGenerator
 
         builder.Append(column.IsNullable ? " NULL" : " NOT NULL");
 
-        if (_dialect.RenderDefault(column.Default) is { } @default)
+        // An identity column draws its values from the identity; no provider
+        // accepts a DEFAULT beside it (a serial's nextval default is implied).
+        if (column.Identity.Strategy == IdentityStrategy.None && _dialect.RenderDefault(column.Default) is { } @default)
         {
             builder.Append(" DEFAULT ").Append(@default);
         }

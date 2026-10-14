@@ -27,6 +27,39 @@ public sealed class PostgreSqlSchemaProvider : InformationSchemaProvider
     protected override IReadOnlySet<string> SystemSchemas => System;
 
     /// <inheritdoc />
+    protected override string ColumnCommentSql =>
+        "col_description((quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass, ordinal_position::int)";
+
+    /// <inheritdoc />
+    protected override async Task<IReadOnlyList<CheckConstraint>> ReadChecksAsync(TableRef table, CancellationToken cancellationToken) =>
+        await QueryAsync(
+            """
+            SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
+            WHERE contype = 'c' AND conrelid = (quote_ident(coalesce(@s, current_schema())) || '.' || quote_ident(@t))::regclass
+            ORDER BY conname
+            """,
+            reader => new CheckConstraint { Name = String(reader, "conname"), Expression = Unwrap(String(reader, "def")) },
+            cancellationToken,
+            ("@t", table.Name),
+            ("@s", table.Schema)).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    protected override async Task<string?> ReadTableCommentAsync(TableRef table, CancellationToken cancellationToken) =>
+        (await QueryAsync(
+            "SELECT obj_description((quote_ident(coalesce(@s, current_schema())) || '.' || quote_ident(@t))::regclass, 'pg_class') AS c",
+            reader => StringOrNull(reader, "c"),
+            cancellationToken,
+            ("@t", table.Name),
+            ("@s", table.Schema)).ConfigureAwait(false)).FirstOrDefault();
+
+    /// <inheritdoc />
+    protected override string NativeTypeSql => """
+        (SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a
+         WHERE a.attrelid = (quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass
+           AND a.attname = column_name AND NOT a.attisdropped)
+        """;
+
+    /// <inheritdoc />
     public override async Task<IReadOnlyList<string>> GetDatabasesAsync(CancellationToken cancellationToken = default) =>
         await QueryAsync(
             "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname",
@@ -85,5 +118,28 @@ public sealed class PostgreSqlSchemaProvider : InformationSchemaProvider
             ("@s", table.Schema)).ConfigureAwait(false);
 
         return IndexRow.Group(rows);
+    }
+
+    /// <inheritdoc />
+    protected override async Task<IReadOnlyList<View>> ReadViewsAsync(string? schema, CancellationToken cancellationToken)
+    {
+        var filter = schema is null ? "NOT IN ('pg_catalog', 'information_schema') AND schemaname NOT LIKE 'pg\\_%'" : "= @s";
+        var sql = $"""
+            SELECT schemaname AS s, viewname AS n, definition AS d, false AS m FROM pg_views WHERE schemaname {filter}
+            UNION ALL
+            SELECT schemaname, matviewname, definition, true FROM pg_matviews WHERE schemaname {filter}
+            ORDER BY 1, 2
+            """;
+        return await QueryAsync(
+            sql,
+            reader => new View
+            {
+                Schema = String(reader, "s"),
+                Name = String(reader, "n"),
+                Definition = String(reader, "d").Trim().TrimEnd(';'),
+                IsMaterialized = reader.GetBoolean(reader.GetOrdinal("m")),
+            },
+            cancellationToken,
+            schema is null ? [] : [("@s", schema)]).ConfigureAwait(false);
     }
 }

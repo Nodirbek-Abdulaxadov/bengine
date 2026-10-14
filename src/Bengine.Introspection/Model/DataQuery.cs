@@ -39,6 +39,20 @@ public sealed record DataQuery
     public IReadOnlyList<SortSpec> Sort { get; init; } = [];
 
     /// <summary>
+    /// Gets a free-form SQL condition typed into the data editor's <c>WHERE</c>
+    /// box, combined with <see cref="Filters"/> by <c>AND</c>. It is the user's own
+    /// SQL, run verbatim like a console statement, so it is only as safe as the
+    /// connection's permissions.
+    /// </summary>
+    public string? WhereSql { get; init; }
+
+    /// <summary>
+    /// Gets a free-form SQL ordering typed into the data editor's <c>ORDER BY</c>
+    /// box; when set it takes precedence over <see cref="Sort"/>. Run verbatim.
+    /// </summary>
+    public string? OrderBySql { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether to run a matching <c>COUNT(*)</c> so the
     /// page carries the total row count. Off by default because counting a large
     /// filtered relation can be as costly as the page read itself.

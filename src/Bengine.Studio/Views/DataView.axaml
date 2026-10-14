@@ -4,59 +4,109 @@
              xmlns:c="clr-namespace:Bengine.Studio.Controls"
              x:Class="Bengine.Studio.Views.DataView"
              x:DataType="vm:DataDocumentViewModel">
+  <UserControl.Styles>
+    <Style Selector="DataGridRow.inserted"><Setter Property="Background" Value="#14321f" /></Style>
+    <Style Selector="DataGridRow.deleted"><Setter Property="Background" Value="#3a1d1d" /><Setter Property="Opacity" Value="0.65" /></Style>
+    <Style Selector="TextBox.clause">
+      <Setter Property="FontFamily" Value="{StaticResource Mono}" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="Padding" Value="8,4" />
+    </Style>
+  </UserControl.Styles>
   <DockPanel>
     <!-- Toolbar -->
-    <Border DockPanel.Dock="Top" Classes="toolbar">
+    <Border DockPanel.Dock="Top" Classes="toolbar" BorderThickness="0,0,0,1"
+            BorderBrush="{Binding AccentColor, Converter={x:Static c:Converters.AccentBrush}}">
       <WrapPanel>
-        <Button Classes="ghost" Content="⟳" ToolTip.Tip="Refresh" Command="{Binding RefreshCommand}" Margin="0,0,6,0" />
-        <Button Classes="ghost" Content="＋ Row" Command="{Binding AddRowCommand}" Margin="0,0,6,0" />
-        <Button Classes="ghost" Content="Save new" Command="{Binding SaveNewRowsCommand}" Margin="0,0,6,0" />
-        <Button Classes="ghost" Content="✕ Delete" Foreground="{StaticResource Danger}" Command="{Binding DeleteRowCommand}" Margin="0,0,14,0" />
-        <TextBlock Classes="dim" Text="Filter" VerticalAlignment="Center" Margin="0,0,6,0" />
-        <ComboBox Width="150" ItemsSource="{Binding Columns}" SelectedItem="{Binding SelectedFilterColumn}" PlaceholderText="column" Margin="0,0,6,0" />
-        <ComboBox Width="140" ItemsSource="{Binding Operators}" SelectedItem="{Binding SelectedOperator}" Margin="0,0,6,0" />
-        <TextBox Width="160" Text="{Binding FilterValue}" Watermark="value" Margin="0,0,6,0">
-          <TextBox.KeyBindings>
-            <KeyBinding Gesture="Enter" Command="{Binding ApplyFilterCommand}" />
-          </TextBox.KeyBindings>
-        </TextBox>
-        <Button Classes="primary" Content="Apply" Command="{Binding ApplyFilterCommand}" Margin="0,0,6,0" />
-        <Button Classes="ghost" Content="Clear" Command="{Binding ClearFilterCommand}" Margin="0,0,14,0" />
-        <Button Classes="ghost" Content="Export ▾">
+        <Button Classes="tool" Content="⟳" ToolTip.Tip="Reload (F5)" Command="{Binding RefreshCommand}" />
+        <Button Classes="tool" Content="⏮" ToolTip.Tip="First page" Command="{Binding FirstPageCommand}" />
+        <Button Classes="tool" Content="‹" ToolTip.Tip="Previous page" Command="{Binding PreviousPageCommand}" />
+        <Button Classes="tool" Content="›" ToolTip.Tip="Next page" Command="{Binding NextPageCommand}" />
+        <Button Classes="tool" Content="⏭" ToolTip.Tip="Last page" Command="{Binding LastPageCommand}" />
+        <Border Classes="sep" />
+        <Button Classes="tool" Content="＋" ToolTip.Tip="Add row (Alt+Insert)" Command="{Binding AddRowCommand}" IsEnabled="{Binding CanEdit}" />
+        <Button Classes="tool" Content="⧉" ToolTip.Tip="Clone row (Ctrl+D)" Command="{Binding CloneRowCommand}" IsEnabled="{Binding CanEdit}" />
+        <Button Classes="tool" Content="－" ToolTip.Tip="Delete rows (Ctrl+Delete)" Command="{Binding DeleteRowsCommand}" IsEnabled="{Binding CanEdit}" />
+        <Border Classes="sep" />
+        <Button Classes="primary" Content="Submit" ToolTip.Tip="Submit pending changes (Ctrl+Enter)" Command="{Binding SubmitCommand}" IsEnabled="{Binding HasPending}" Margin="0,0,4,0" />
+        <Button Classes="ghost" Content="Preview…" ToolTip.Tip="Show the SQL of the pending changes" Command="{Binding PreviewChangesCommand}" IsEnabled="{Binding HasPending}" Margin="0,0,4,0" />
+        <Button Classes="ghost" Content="Revert" ToolTip.Tip="Discard all pending changes (Ctrl+Alt+Z)" Command="{Binding RevertAllCommand}" IsEnabled="{Binding HasPending}" Margin="0,0,4,0" />
+        <Border Background="#1d3557" CornerRadius="3" Padding="6,1" IsVisible="{Binding HasPending}" VerticalAlignment="Center">
+          <TextBlock FontSize="11" Foreground="#9cc4ff" Text="{Binding PendingCount, StringFormat='{}{0} pending'}" />
+        </Border>
+        <CheckBox Content="Auto-submit" IsChecked="{Binding AutoSubmit}" Margin="8,0,0,0" ToolTip.Tip="Submit each edit as soon as the cell is left" IsEnabled="{Binding CanEdit}" />
+        <Border Classes="sep" />
+        <ToggleButton Classes="tool" Content="⇅ Record" IsChecked="{Binding IsRecordView}" ToolTip.Tip="Show the selected row as a vertical record" />
+        <Button Classes="tool" Content="⌨" ToolTip.Tip="Open this query in a console" Command="{Binding OpenInConsoleCommand}" />
+        <Button Classes="ghost" Content="Export ▾" Margin="4,0,0,0">
           <Button.Flyout>
             <MenuFlyout Placement="BottomEdgeAlignedLeft">
-              <MenuItem Header="CSV…" Command="{Binding ExportCsvCommand}" />
-              <MenuItem Header="JSON…" Command="{Binding ExportJsonCommand}" />
-              <MenuItem Header="SQL INSERTs…" Command="{Binding ExportSqlCommand}" />
+              <MenuItem Header="CSV…" Command="{Binding ExportCommand}" CommandParameter="csv" />
+              <MenuItem Header="TSV…" Command="{Binding ExportCommand}" CommandParameter="tsv" />
+              <MenuItem Header="JSON…" Command="{Binding ExportCommand}" CommandParameter="json" />
+              <MenuItem Header="Markdown…" Command="{Binding ExportCommand}" CommandParameter="markdown" />
+              <MenuItem Header="SQL INSERTs…" Command="{Binding ExportCommand}" CommandParameter="sql-insert" />
+              <MenuItem Header="Excel (.xlsx)…" Command="{Binding ExportCommand}" CommandParameter="xlsx" />
             </MenuFlyout>
           </Button.Flyout>
         </Button>
+        <TextBox Width="170" Margin="8,0,0,0" Watermark="Find in page…" Text="{Binding FindText}" />
       </WrapPanel>
     </Border>
 
-    <!-- Pager -->
-    <Border DockPanel.Dock="Bottom" Background="{StaticResource Panel}" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,1,0,0" Padding="10,5">
+    <!-- WHERE / ORDER BY -->
+    <Border DockPanel.Dock="Top" Background="{StaticResource Panel}" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,0,0,1" Padding="8,5">
+      <Grid ColumnDefinitions="Auto,3*,Auto,2*,Auto">
+        <TextBlock Grid.Column="0" Text="WHERE" Foreground="#c792ea" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,0" />
+        <TextBox Grid.Column="1" Classes="clause" x:Name="Where" Text="{Binding WhereText}" Watermark="condition, e.g. status = 'active' AND created_at > now() - interval '7 days'">
+          <TextBox.KeyBindings><KeyBinding Gesture="Enter" Command="{Binding ApplyFilterCommand}" /></TextBox.KeyBindings>
+        </TextBox>
+        <TextBlock Grid.Column="2" Text="ORDER BY" Foreground="#c792ea" FontWeight="Bold" VerticalAlignment="Center" Margin="14,0,8,0" />
+        <TextBox Grid.Column="3" Classes="clause" Text="{Binding OrderByText}" Watermark="e.g. id DESC">
+          <TextBox.KeyBindings><KeyBinding Gesture="Enter" Command="{Binding ApplyFilterCommand}" /></TextBox.KeyBindings>
+        </TextBox>
+        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4" Margin="8,0,0,0">
+          <Button Classes="ghost" Content="Apply" Command="{Binding ApplyFilterCommand}" />
+          <Button Classes="tool" Content="✕" ToolTip.Tip="Clear filter and ordering" Command="{Binding ClearFilterCommand}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Pager / status -->
+    <Border DockPanel.Dock="Bottom" Background="{StaticResource Panel}" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,1,0,0" Padding="10,4">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
           <TextBlock Classes="dim" Text="Rows/page" VerticalAlignment="Center" />
           <ComboBox ItemsSource="{Binding PageSizes}" SelectedItem="{Binding PageSize}" />
-          <Button Classes="ghost" Content="«" Command="{Binding FirstPageCommand}" />
-          <Button Classes="ghost" Content="‹ Prev" Command="{Binding PreviousPageCommand}" />
-          <Button Classes="ghost" Content="Next ›" Command="{Binding NextPageCommand}" />
         </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="14">
           <TextBlock Classes="dim" Text="{Binding PageInfo}" VerticalAlignment="Center" />
-          <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="700"
+          <TextBlock Classes="dim mono" FontSize="12" Text="{Binding Aggregates}" VerticalAlignment="Center" IsVisible="{Binding Aggregates, Converter={x:Static c:Converters.HasText}}" />
+          <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="760"
                      Foreground="{Binding IsError, Converter={x:Static c:Converters.StatusBrush}}" />
         </StackPanel>
       </DockPanel>
     </Border>
 
-    <Panel>
-      <DataGrid x:Name="Grid" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}"
-                AutoGenerateColumns="False" IsReadOnly="False" CanUserSortColumns="True" CanUserResizeColumns="True"
-                CanUserReorderColumns="True" HeadersVisibility="All" FrozenColumnCount="0" />
-      <ProgressBar IsIndeterminate="True" VerticalAlignment="Top" Height="2" MinHeight="2" IsVisible="{Binding IsBusy}" />
-    </Panel>
+    <Grid ColumnDefinitions="*,Auto,Auto">
+      <DataGrid Grid.Column="0" x:Name="Grid" ItemsSource="{Binding VisibleRows}" SelectedItem="{Binding SelectedRow}"
+                AutoGenerateColumns="False" CanUserSortColumns="True" CanUserResizeColumns="True" SelectionMode="Extended"
+                CanUserReorderColumns="True" HeadersVisibility="All" />
+      <GridSplitter Grid.Column="1" Width="4" Background="{StaticResource LineSoft}" IsVisible="{Binding IsRecordView}" />
+      <Border Grid.Column="2" Width="380" Background="{StaticResource Panel}" IsVisible="{Binding IsRecordView}">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="Record" FontWeight="SemiBold" Margin="10,8" />
+          <DataGrid ItemsSource="{Binding Record}" AutoGenerateColumns="False" HeadersVisibility="Column" IsReadOnly="{Binding !CanEdit}">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Column" Binding="{Binding Name}" IsReadOnly="True" Width="130" />
+              <DataGridTextColumn Header="Value" Binding="{Binding Value, Mode=TwoWay}" Width="*" />
+              <DataGridTextColumn Header="Type" Binding="{Binding Type}" IsReadOnly="True" Width="90" Foreground="#5d6a7d" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </Border>
+      <ProgressBar Grid.ColumnSpan="3" IsIndeterminate="True" VerticalAlignment="Top" Height="2" MinHeight="2" IsVisible="{Binding IsBusy}" />
+    </Grid>
   </DockPanel>
 </UserControl>

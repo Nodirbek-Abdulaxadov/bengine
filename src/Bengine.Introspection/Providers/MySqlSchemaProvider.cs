@@ -29,6 +29,76 @@ public sealed class MySqlSchemaProvider : InformationSchemaProvider
     protected override IReadOnlySet<string> SystemSchemas => System;
 
     /// <inheritdoc />
+    protected override string NativeTypeSql => "column_type";
+
+    /// <inheritdoc />
+    protected override string ColumnCommentSql => "column_comment";
+
+    /// <inheritdoc />
+    protected override string ForeignKeySql => """
+        SELECT kcu.constraint_name, kcu.column_name, kcu.ordinal_position,
+               kcu.referenced_table_schema AS referenced_schema,
+               kcu.referenced_table_name AS referenced_table,
+               kcu.referenced_column_name AS referenced_column,
+               rc.update_rule, rc.delete_rule
+        FROM information_schema.key_column_usage kcu
+        JOIN information_schema.referential_constraints rc
+          ON rc.constraint_schema = kcu.constraint_schema
+         AND rc.constraint_name = kcu.constraint_name
+         AND rc.table_name = kcu.table_name
+        WHERE kcu.referenced_table_name IS NOT NULL
+          AND kcu.table_name = @t AND (@s IS NULL OR kcu.table_schema = @s)
+        ORDER BY kcu.constraint_name, kcu.ordinal_position
+        """;
+
+    /// <summary>
+    /// MySQL reports a literal string default bare (<c>anon</c>), while an
+    /// expression default is flagged <c>DEFAULT_GENERATED</c>; quote the
+    /// literals so they read like every other provider's. MariaDB already quotes.
+    /// </summary>
+    protected override string DefaultSql => """
+        CASE WHEN column_default IS NULL OR VERSION() LIKE '%MariaDB%' OR extra LIKE '%DEFAULT_GENERATED%'
+                  OR column_default REGEXP '^-?[0-9]+(\\.[0-9]+)?$' OR data_type IN ('bit')
+             THEN column_default
+             ELSE CONCAT('''', REPLACE(column_default, '''', ''''''), '''') END
+        """;
+
+    /// <inheritdoc />
+    protected override async Task<IReadOnlyList<CheckConstraint>> ReadChecksAsync(TableRef table, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await QueryAsync(
+                """
+                SELECT cc.constraint_name AS name, cc.check_clause AS clause
+                FROM information_schema.check_constraints cc
+                JOIN information_schema.table_constraints tc
+                  ON tc.constraint_schema = cc.constraint_schema AND tc.constraint_name = cc.constraint_name
+                WHERE tc.constraint_type = 'CHECK' AND tc.table_name = @t AND (@s IS NULL OR tc.table_schema = @s)
+                ORDER BY cc.constraint_name
+                """,
+                reader => new CheckConstraint { Name = String(reader, "name"), Expression = Unwrap(String(reader, "clause")) },
+                cancellationToken,
+                ("@t", table.Name),
+                ("@s", table.Schema)).ConfigureAwait(false);
+        }
+        catch (IntrospectionException)
+        {
+            // MySQL before 8.0.16 has no check_constraints view.
+            return [];
+        }
+    }
+
+    /// <inheritdoc />
+    protected override async Task<string?> ReadTableCommentAsync(TableRef table, CancellationToken cancellationToken) =>
+        (await QueryAsync(
+            "SELECT table_comment AS c FROM information_schema.tables WHERE table_name = @t AND (@s IS NULL OR table_schema = @s)",
+            reader => StringOrNull(reader, "c"),
+            cancellationToken,
+            ("@t", table.Name),
+            ("@s", table.Schema)).ConfigureAwait(false)).FirstOrDefault();
+
+    /// <inheritdoc />
     public override Task<IReadOnlyList<string>> GetDatabasesAsync(CancellationToken cancellationToken = default) =>
         GetSchemasAsync(cancellationToken);
 
@@ -78,5 +148,27 @@ public sealed class MySqlSchemaProvider : InformationSchemaProvider
             ("@s", table.Schema)).ConfigureAwait(false);
 
         return IndexRow.Group(rows);
+    }
+
+    /// <inheritdoc />
+    protected override async Task<IReadOnlyList<View>> ReadViewsAsync(string? schema, CancellationToken cancellationToken)
+    {
+        var sql = "SELECT table_schema AS s, table_name AS n, view_definition AS d FROM information_schema.views WHERE "
+            + (schema is null ? "table_schema = DATABASE()" : "table_schema = @s") + " ORDER BY table_name";
+        return await QueryAsync(
+            sql,
+            reader =>
+            {
+                // MySQL qualifies every name with the view's database; drop it so the view moves with a dump.
+                var owner = String(reader, "s");
+                return new View
+                {
+                    Schema = owner,
+                    Name = String(reader, "n"),
+                    Definition = (StringOrNull(reader, "d") ?? string.Empty).Replace($"`{owner}`.", string.Empty, StringComparison.Ordinal),
+                };
+            },
+            cancellationToken,
+            schema is null ? [] : [("@s", schema)]).ConfigureAwait(false);
     }
 }

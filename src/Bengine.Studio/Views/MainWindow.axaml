@@ -16,13 +16,28 @@
     <DataTemplate DataType="vm:SqlDocumentViewModel"><v:SqlView /></DataTemplate>
     <DataTemplate DataType="vm:DataDocumentViewModel"><v:DataView /></DataTemplate>
     <DataTemplate DataType="vm:QueryDocumentViewModel"><v:QueryView /></DataTemplate>
+    <DataTemplate DataType="vm:SchemaCompareViewModel"><v:SchemaCompareView /></DataTemplate>
+    <DataTemplate DataType="vm:DiagramDocumentViewModel"><v:DiagramView /></DataTemplate>
+    <DataTemplate DataType="vm:ActivityDocumentViewModel"><v:ActivityView /></DataTemplate>
+    <DataTemplate DataType="vm:DataCompareViewModel"><v:DataCompareView /></DataTemplate>
   </Window.DataTemplates>
 
   <Window.Styles>
-    <Style Selector="TreeViewItem">
+    <Style Selector="TreeView#Tree TreeViewItem">
       <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" x:DataType="vm:TreeItemViewModel" />
+      <Setter Property="IsVisible" Value="{Binding IsVisible}" x:DataType="vm:TreeItemViewModel" />
       <Setter Property="MinHeight" Value="24" />
       <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="TreeView#FileTree TreeViewItem">
+      <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" x:DataType="vm:FileItem" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="TabControl.side > TabItem">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="12,0" />
+      <Setter Property="FontSize" Value="13" />
     </Style>
     <Style Selector="TabControl.workspace > TabItem">
       <Setter Property="MinHeight" Value="34" />
@@ -41,18 +56,27 @@
     </Border>
 
     <Grid ColumnDefinitions="340,4,*">
+      <TabControl Grid.Column="0" Classes="side" x:Name="SidePanels" Padding="0" Background="{StaticResource Panel}">
       <!-- Object Explorer -->
-      <DockPanel Grid.Column="0" Background="{StaticResource Panel}">
+      <TabItem Header="Database">
+      <DockPanel Background="{StaticResource Panel}">
         <Border DockPanel.Dock="Top" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,0,0,1" Padding="12,6,6,6">
           <DockPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2">
               <Button Classes="tool" Content="＋" ToolTip.Tip="Register Server" Command="{Binding RegisterServerCommand}" />
               <Button Classes="tool" Content="⇩" ToolTip.Tip="Import from pgAdmin / DataGrip" Command="{Binding ImportPgAdminCommand}" />
               <Button Classes="tool" Content="⟳" ToolTip.Tip="Refresh (F5)" Command="{Binding RefreshCommand}" />
-              <Button Classes="tool" Content="⌨" ToolTip.Tip="Query Tool" Command="{Binding QueryToolCommand}" />
+              <Button Classes="tool" Content="⌨" ToolTip.Tip="Query Tool (Ctrl+Shift+Q)" Command="{Binding QueryToolCommand}" />
+              <Button Classes="tool" Content="⟲" ToolTip.Tip="Query history (Ctrl+Alt+E)" Command="{Binding ShowHistoryCommand}" />
+              <Button Classes="tool" Content="⌕" ToolTip.Tip="Go to object (Ctrl+N)" Click="OnGoTo" />
+              <Button Classes="tool" Content="⇄" ToolTip.Tip="Compare schemas" Command="{Binding CompareCommand}" />
             </StackPanel>
             <TextBlock Text="Object Explorer" FontWeight="SemiBold" VerticalAlignment="Center" />
           </DockPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Top" Padding="8,6" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,0,0,1">
+          <TextBox x:Name="TreeFilter" Text="{Binding FilterText}" Watermark="Filter loaded objects…  (Ctrl+F)" MinHeight="28" Padding="8,4" />
         </Border>
 
         <Panel>
@@ -64,7 +88,9 @@
                     Padding="0,4">
             <TreeView.ItemTemplate>
               <TreeDataTemplate DataType="vm:TreeItemViewModel" ItemsSource="{Binding Children}">
-                <StackPanel Orientation="Horizontal" Spacing="6" Height="22" Background="Transparent">
+                <StackPanel Orientation="Horizontal" Spacing="6" Height="22" Background="{Binding AccentColor, Converter={x:Static c:Converters.AccentTint}}">
+                  <Border Width="3" Height="16" CornerRadius="1" VerticalAlignment="Center" Background="{Binding AccentColor, Converter={x:Static c:Converters.AccentBrush}}"
+                          IsVisible="{Binding AccentColor, Converter={x:Static ObjectConverters.IsNotNull}}" />
                   <ContentControl Content="{Binding Icon}" Width="16" Height="16" VerticalAlignment="Center" IsVisible="{Binding !IsPlaceholder}" />
                   <TextBlock Text="{Binding Label}" VerticalAlignment="Center"
                              Classes.dim="{Binding IsPlaceholder}"
@@ -72,6 +98,7 @@
                              Foreground="{Binding IsError, Converter={x:Static c:Converters.ErrorBrush}}" />
                   <TextBlock Text="{Binding CountText}" Classes="dim" VerticalAlignment="Center" IsVisible="{Binding CountText, Converter={x:Static ObjectConverters.IsNotNull}}" />
                   <TextBlock Text="{Binding Detail}" Classes="faint" FontSize="12" VerticalAlignment="Center" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  <TextBlock Text="🔒" FontSize="10" VerticalAlignment="Center" ToolTip.Tip="Read-only" IsVisible="{Binding IsReadOnlyServer}" />
                   <ProgressBar IsIndeterminate="True" Width="40" Height="3" MinWidth="0" VerticalAlignment="Center" IsVisible="{Binding IsLoading}" />
                 </StackPanel>
               </TreeDataTemplate>
@@ -85,6 +112,38 @@
           </StackPanel>
         </Panel>
       </DockPanel>
+      </TabItem>
+
+      <!-- SQL files: the project folder and scratches -->
+      <TabItem Header="Files">
+        <DockPanel Background="{StaticResource Panel}" DataContext="{Binding FilesPanel}" x:DataType="vm:FilesViewModel">
+          <Border DockPanel.Dock="Top" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,0,0,1" Padding="12,6,6,6">
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2">
+                <Button Classes="tool" Content="＋" ToolTip.Tip="New SQL file" Command="{Binding NewFileCommand}" />
+                <Button Classes="tool" Content="⇪" ToolTip.Tip="Open a SQL file…" Command="{Binding OpenFileCommand}" />
+                <Button Classes="tool" Content="✎" ToolTip.Tip="New scratch file" Command="{Binding NewScratchCommand}" />
+                <Button Classes="tool" Content="▤" ToolTip.Tip="Choose the project folder" Command="{Binding ChooseFolderCommand}" />
+                <Button Classes="tool" Content="⟳" ToolTip.Tip="Refresh" Command="{Binding RefreshCommand}" />
+              </StackPanel>
+              <TextBlock Text="Files" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </DockPanel>
+          </Border>
+          <TextBlock DockPanel.Dock="Top" Classes="faint" FontSize="11.5" Margin="12,6" Text="{Binding Folder}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Folder}" />
+          <TreeView x:Name="FileTree" ItemsSource="{Binding Roots}" SelectedItem="{Binding Selected}" Background="Transparent" Padding="0,2"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <TreeView.ItemTemplate>
+              <TreeDataTemplate DataType="vm:FileItem" ItemsSource="{Binding Children}">
+                <StackPanel Orientation="Horizontal" Spacing="6" Height="22" ToolTip.Tip="{Binding Path}">
+                  <TextBlock Text="{Binding Glyph}" Classes="dim" Width="12" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="{Binding IsDirectory, Converter={x:Static c:Converters.BoldIfTrue}}" />
+                </StackPanel>
+              </TreeDataTemplate>
+            </TreeView.ItemTemplate>
+          </TreeView>
+        </DockPanel>
+      </TabItem>
+      </TabControl>
 
       <GridSplitter Grid.Column="1" Background="{StaticResource LineSoft}" ResizeDirection="Columns" />
 
@@ -93,6 +152,8 @@
         <TabControl.ItemTemplate>
           <DataTemplate DataType="vm:DocumentViewModel">
             <StackPanel Orientation="Horizontal" Spacing="7" ToolTip.Tip="{Binding ToolTip}">
+              <Border Width="3" Height="14" CornerRadius="1" VerticalAlignment="Center" Background="{Binding AccentColor, Converter={x:Static c:Converters.AccentBrush}}"
+                      IsVisible="{Binding AccentColor, Converter={x:Static ObjectConverters.IsNotNull}}" />
               <c:IconView Kind="{Binding IconKind}" IsVisible="{Binding IconKind, Converter={x:Static ObjectConverters.IsNotNull}}" VerticalAlignment="Center" />
               <TextBlock Text="{Binding Title}" MaxWidth="240" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
               <Button Classes="tool" Content="✕" FontSize="10" Padding="4,1" MinWidth="0" VerticalAlignment="Center"

@@ -42,16 +42,17 @@ public partial class SqlView : UserControl
         }
     }
 
-    // Inlines are not bindable; rebuild the highlighted runs when the SQL changes.
+    // The editor text is not bindable; refresh it when the SQL changes.
     private void Render()
     {
-        var code = this.FindControl<SelectableTextBlock>("Code");
-        if (code is null)
+        if (this.FindControl<SqlEditor>("Code") is not { } code)
         {
             return;
         }
 
-        code.Inlines = _bound?.Sql is { } sql ? SqlHighlighter.Highlight(sql) : null;
+        code.Provider = _bound?.Provider ?? Bengine.Enums.DatabaseProvider.PostgreSql;
+        code.Text = _bound?.Sql ?? string.Empty;
+        code.IsVisible = _bound?.Sql is not null;
     }
 
     private async void OnCopy(object? sender, RoutedEventArgs e)

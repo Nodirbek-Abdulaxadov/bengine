@@ -95,12 +95,19 @@ public static partial class ObjectExplorer
     /// <param name="cancellationToken">Cancels the connection attempt.</param>
     /// <returns>An open session.</returns>
     /// <exception cref="IntrospectionException">The connection could not be opened.</exception>
-    public static Task<DatabaseSession> OpenSessionAsync(
+    public static async Task<DatabaseSession> OpenSessionAsync(
         ServerProfile server,
         string? password,
         string? database,
-        CancellationToken cancellationToken = default) =>
-        DatabaseSession.OpenAsync(server.Provider, ConnectionStringFactory.Build(server, database, password), cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        var routed = await SshTunnels.RouteAsync(server, cancellationToken).ConfigureAwait(false);
+        return await DatabaseSession.OpenAsync(
+            server.Provider,
+            ConnectionStringFactory.Build(routed, database, password),
+            new SessionOptions { ReadOnly = server.ReadOnly },
+            cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>Verifies that the server accepts a connection with the given credentials.</summary>
     /// <param name="server">The registered server.</param>
@@ -161,8 +168,11 @@ public static partial class ObjectExplorer
         _ => SplitWords().Replace(kind.ToString().Replace("Folder", string.Empty, StringComparison.Ordinal), " $1").Trim(),
     };
 
-    private static Task<DbConnection> OpenAsync(ServerProfile server, string? password, string? database, CancellationToken cancellationToken) =>
-        DatabaseConnectionFactory.OpenAsync(server.Provider, ConnectionStringFactory.Build(server, database, password), cancellationToken);
+    private static async Task<DbConnection> OpenAsync(ServerProfile server, string? password, string? database, CancellationToken cancellationToken)
+    {
+        var routed = await SshTunnels.RouteAsync(server, cancellationToken).ConfigureAwait(false);
+        return await DatabaseConnectionFactory.OpenAsync(server.Provider, ConnectionStringFactory.Build(routed, database, password), cancellationToken).ConfigureAwait(false);
+    }
 
     [GeneratedRegex("(?<!^)([A-Z])")]
     private static partial Regex SplitWords();

@@ -27,6 +27,14 @@ public sealed class SqlServerSchemaProvider : InformationSchemaProvider
     protected override IReadOnlySet<string> SystemSchemas => System;
 
     /// <inheritdoc />
+    protected override async Task<IReadOnlyList<CheckConstraint>> ReadChecksAsync(TableRef table, CancellationToken cancellationToken) =>
+        await QueryAsync(
+            "SELECT name, definition FROM sys.check_constraints WHERE parent_object_id = OBJECT_ID(@q) ORDER BY name",
+            reader => new CheckConstraint { Name = String(reader, "name"), Expression = Unwrap(String(reader, "definition")) },
+            cancellationToken,
+            ("@q", table.Schema is null ? $"[{table.Name}]" : $"[{table.Schema}].[{table.Name}]")).ConfigureAwait(false);
+
+    /// <inheritdoc />
     public override async Task<IReadOnlyList<string>> GetDatabasesAsync(CancellationToken cancellationToken = default) =>
         await QueryAsync(
             "SELECT name FROM sys.databases WHERE database_id > 4 ORDER BY name",
@@ -86,5 +94,25 @@ public sealed class SqlServerSchemaProvider : InformationSchemaProvider
             ("@s", table.Schema)).ConfigureAwait(false);
 
         return IndexRow.Group(rows);
+    }
+
+    /// <inheritdoc />
+    protected override async Task<IReadOnlyList<View>> ReadViewsAsync(string? schema, CancellationToken cancellationToken)
+    {
+        var sql = """
+            SELECT s.name AS s, v.name AS n, OBJECT_DEFINITION(v.object_id) AS d
+            FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id
+            WHERE v.is_ms_shipped = 0
+            """ + (schema is null ? string.Empty : " AND s.name = @s") + " ORDER BY s.name, v.name";
+        return await QueryAsync(
+            sql,
+            reader => new View
+            {
+                Schema = String(reader, "s"),
+                Name = String(reader, "n"),
+                Definition = ViewBody(StringOrNull(reader, "d") ?? string.Empty),
+            },
+            cancellationToken,
+            schema is null ? [] : [("@s", schema)]).ConfigureAwait(false);
     }
 }

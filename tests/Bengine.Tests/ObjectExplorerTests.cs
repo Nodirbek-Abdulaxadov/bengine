@@ -16,6 +16,7 @@ using Xunit.Abstractions;
 /// <c>BENGINE_TEST_PG</c> environment variable holds
 /// <c>host;port;database;user;password</c>.
 /// </summary>
+[Collection("live-postgres")]
 public sealed class ObjectExplorerTests : IDisposable
 {
     private readonly ITestOutputHelper _output;
@@ -283,7 +284,10 @@ public sealed class ObjectExplorerTests : IDisposable
 
             try
             {
-                var children = await ObjectExplorer.GetChildrenAsync(server, password, node.Ref);
+                // Scratch databases of tests running in parallel (bengine_ui_*, bengine_bak_*, …) can vanish mid-walk.
+                var children = (await ObjectExplorer.GetChildrenAsync(server, password, node.Ref))
+                    .Where(c => !(c.Ref.Kind == NodeKind.Database && c.Ref.Name?.StartsWith("bengine_", StringComparison.Ordinal) == true))
+                    .ToList();
                 foreach (var child in node.IsFolder ? children.Take(maxPerFolder) : children)
                 {
                     queue.Enqueue((child, depth + 1));
