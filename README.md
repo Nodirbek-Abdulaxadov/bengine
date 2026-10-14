@@ -36,8 +36,9 @@ write). The API exposes this at `POST /api/import/sql`, and the designer's
 ## Database Explorer (live databases)
 
 The AST can also be built **from a running database**. `Bengine.Introspection`
-connects to a live PostgreSQL, SQL Server, MySQL, SQLite, or Oracle database and offers
-three capabilities over one `DatabaseSession`, the way a database tool does:
+connects to a live PostgreSQL, SQL Server, MySQL, SQLite, or Oracle database — and
+to MongoDB (below) — and offers three capabilities over one `DatabaseSession`, the
+way a database tool does:
 
 - **Discover** — list databases, schemas, and relations (`IDatabaseExplorer`).
 - **Introspect** — read a relation, or a whole schema, into the same
@@ -110,7 +111,8 @@ stores passwords in a readable form (pgAdmin encrypts them; DataGrip keeps them
 in the OS keyring), so imported servers prompt once on first connect ("Save
 password" stores it in the file; otherwise it is kept in memory for the
 session). Oracle data sources are imported too (`@//host:port/service`,
-`@host:port:SID`, and `(DESCRIPTION=…)` URLs; a TNS alias cannot be resolved);
+`@host:port:SID`, and `(DESCRIPTION=…)` URLs; a TNS alias cannot be resolved),
+and so are MongoDB ones (`mongodb://` and `mongodb+srv://`);
 drivers Bengine does not support, such as DB2, are listed as skipped.
 
 The engine's front end is **Bengine Data Studio** (`Bengine.Studio`), an
@@ -133,6 +135,32 @@ Oracle folds `users` to `USERS` and checks and views resolve; against a live
 database, names stay exactly as stored. Explain Analyze and Server Activity read
 `V$` views, which need `SELECT_CATALOG_ROLE`.
 
+**MongoDB** (through the official MongoDB .NET driver) is browsed like a
+database in DataGrip, in Studio and the engine (it is not a target of the SQL
+generators). Register it with a host and port — or paste a whole
+`mongodb+srv://` URL into the host field (Atlas) — with the authentication
+database (`admin` by default) and URL options (`replicaSet=rs0`, …) on the
+Advanced tab; SSH tunnels and TLS work as for the other servers. The tree shows
+databases, collections (capped and time-series marked), views, each
+collection's fields inferred from a sample of 100 documents (embedded documents
+and arrays of documents expand), indexes, and users; a collection's "DDL" is the
+`db.createCollection` / `createIndex` script that recreates it. The data editor
+shows one column per top-level field, takes a filter and a sort as documents
+(`{age: {$gt: 30}}`, `{name: 1}`), and edits documents by `_id`: changed fields
+are `$set`, "Unset Field" `$unset`s one, typed text keeps the field's BSON type
+(numbers, dates, `ObjectId`s, embedded documents in shell syntax), and a new
+document without an `_id` gets one from the server. On a replica set or sharded
+cluster a change set is one transaction; a standalone server has none, so
+changes apply in order and stop at the first failure. The console speaks the
+`mongosh` shell for data — `show dbs`, `db.coll.find({…}).sort({…}).limit(n)`,
+`aggregate([…])`, counts and `distinct`, the write and index methods,
+`db.runCommand({…})`, and bare command documents — with completion of
+collections, methods, fields, and operators; it is not a JavaScript runtime
+(no variables or functions). Explain shows the winning plan (analyzed: the
+execution stages with documents examined), Server Activity lists `currentOp`
+and kills operations, and a read-only registration refuses commands that can
+write. Schema and data compare, dumps, and the diagram are relational only.
+
 > Studio acts with the credentials you give it: the Data tabs and Query Tool
 > **modify live data** when you edit rows or run DML/DDL; connect only to
 > databases you are authorized to use.
@@ -140,7 +168,7 @@ database, names stay exactly as stored. Explain Analyze and Server Activity read
 ### Bengine Data Studio (desktop)
 
 Everything in the explorer above, plus the tools of a database IDE, for
-PostgreSQL, MySQL/MariaDB, SQL Server, SQLite, and Oracle:
+PostgreSQL, MySQL/MariaDB, SQL Server, SQLite, and Oracle (MongoDB as described above):
 
 - **Database Explorer** — a DataGrip-style tree: data sources at the root,
   databases, schemas, and columns without intermediate folders, object kinds
@@ -237,7 +265,9 @@ Live-database tests run when `BENGINE_TEST_PG`, `BENGINE_TEST_MYSQL`,
 `BENGINE_TEST_MARIADB`, or `BENGINE_TEST_MSSQL` is set to
 `host;port;database;user;password` (each test works in a scratch database it
 creates and drops); `BENGINE_TEST_ORACLE` (`host;port;service;admin;password`)
-runs the Oracle tests in scratch users it creates and drops; `BENGINE_TEST_SSH` adds the SSH tunnel test and
+runs the Oracle tests in scratch users it creates and drops; `BENGINE_TEST_MONGO`
+(`host;port;authDatabase;user;password`) runs the MongoDB tests in scratch
+databases it drops; `BENGINE_TEST_SSH` adds the SSH tunnel test and
 `BENGINE_TEST_KEYRING=1` the OS keyring test. The desktop UI tests render
 screenshots to the directory named by `BENGINE_SHOTS`.
 

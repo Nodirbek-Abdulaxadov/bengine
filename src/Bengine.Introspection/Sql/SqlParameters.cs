@@ -27,6 +27,12 @@ public static class SqlParameters
     /// <returns>The occurrences in text order.</returns>
     public static IReadOnlyList<SqlParameterOccurrence> Find(string sql, DatabaseProvider provider)
     {
+        // MongoDB shell commands have no parameter markers ($ starts an operator).
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return [];
+        }
+
         var result = new List<SqlParameterOccurrence>();
         var positional = 0;
         foreach (var lexeme in SqlLexer.Lex(sql, provider))

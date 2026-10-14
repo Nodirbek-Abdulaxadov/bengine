@@ -216,6 +216,7 @@ public static class TreeIcons
         DatabaseProvider.SqlServer => "#e5484d",
         DatabaseProvider.Sqlite => "#4fc1e9",
         DatabaseProvider.Oracle => "#c74634",
+        DatabaseProvider.MongoDb => "#00ed64",
         _ => "#5b9bd5",
     };
 

@@ -159,6 +159,12 @@ public static class SqlKeywords
     /// <returns>The identifier, quoted if necessary.</returns>
     public static string QuoteIfNeeded(string name, DatabaseProvider provider)
     {
+        // MongoDB names are not quoted outside documents.
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return name;
+        }
+
         // Oracle folds bare names to upper case, so only a plain upper-case name may go bare.
         if (provider == DatabaseProvider.Oracle)
         {

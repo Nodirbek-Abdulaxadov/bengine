@@ -155,6 +155,91 @@ public sealed class StudioUiTests
         }
     }
 
+    [AvaloniaFact]
+    public async Task Explores_a_live_mongodb_server_when_configured()
+    {
+        if (Environment.GetEnvironmentVariable("BENGINE_TEST_MONGO") is not { Length: > 0 } spec)
+        {
+            return;
+        }
+
+        // A scratch database, dropped at the end.
+        var parts = spec.Split(';');
+        var server = new ServerProfile
+        {
+            Name = "mongo-live",
+            Provider = DatabaseProvider.MongoDb,
+            Host = parts[0],
+            Port = int.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture),
+            MaintenanceDatabase = parts[2],
+            Username = parts[3],
+            Password = parts[4],
+            SavePassword = true,
+        };
+        var database = $"bengine_ui_{Guid.NewGuid():N}"[..22];
+        async Task Run(string script)
+        {
+            await using var session = await Bengine.Introspection.Tree.ObjectExplorer.OpenSessionAsync(server, null, database);
+            await Bengine.Introspection.Backup.ScriptRunner.RunAsync(session, script);
+        }
+
+        await Run("""
+            db.customers.insertMany([
+              { _id: ObjectId("65a1b2c3d4e5f60718293a4b"), name: "Ann", age: 41, address: { city: "Tashkent" }, tags: ["vip"], joined: ISODate("2024-01-02T03:04:05Z") },
+              { name: "Bob", age: 27, address: { city: "Aktau" } }
+            ])
+            db.customers.createIndex({ name: 1 })
+            db.createView("adults", "customers", [{ $match: { age: { $gte: 30 } } }])
+            """);
+        try
+        {
+            var dir = Directory.CreateTempSubdirectory("bengine_studio_mongo_").FullName;
+            var store = new ServerStore(Path.Combine(dir, "servers.json"));
+            store.Upsert(server);
+            await WalkAsync(store, "mongo", [database, "collections"], "customers", database,
+                "db.customers.find({ age: { $gt: 20 } }).sort({ name: 1 })", "db.createCollection(\"customers\")", async (vm, window) =>
+                {
+                    // Filter with a query document, then edit a document and submit.
+                    var data = vm.Tabs.OfType<DataDocumentViewModel>().Single();
+                    Assert.Equal(("FILTER", "SORT"), (data.WhereLabel, data.OrderByLabel));
+                    data.WhereText = "{ name: 'Ann' }";
+                    await data.ApplyFilterCommand.ExecuteAsync(null);
+                    await Until(() => !data.IsBusy && data.Rows.Count == 1);
+                    var row = data.Rows[0];
+                    var name = data.Columns.IndexOf("name");
+                    var address = data.Columns.IndexOf("address");
+                    Assert.Equal("{city: \"Tashkent\"}", row[address]);
+                    row[name] = "Anna";
+                    row[address] = "{city: 'Samarkand', zip: 140100}";
+                    Assert.Equal(1, data.PendingCount);
+                    await data.SubmitCommand.ExecuteAsync(null);
+                    await Until(() => !data.IsBusy && data.PendingCount == 0);
+                    Assert.False(data.IsError, data.Status);
+                    vm.ActiveTab = data;
+                    Shot(window, "mongo-6-edited");
+
+                    await using var check = await Bengine.Introspection.Tree.ObjectExplorer.OpenSessionAsync(server, null, database);
+                    var saved = await check.Query.ExecuteAsync("db.customers.findOne({ _id: ObjectId('65a1b2c3d4e5f60718293a4b') })");
+                    Assert.Equal("Anna", saved.Rows[0][saved.Columns.ToList().IndexOf("name")]);
+                    Assert.Equal("{city: \"Samarkand\", zip: 140100}", saved.Rows[0][saved.Columns.ToList().IndexOf("address")]!.ToString());
+
+                    // The collection offers MongoDB's actions: rename and drop, no usages search.
+                    var collection = vm.ServerItems.First().Children.First(c => c.Label == database)
+                        .Children.First(c => c.Label == "collections").Children.First(c => c.Label == "customers");
+                    Assert.True(ExplorerViewModel.CanRename(collection) && ExplorerViewModel.CanDrop(collection) && !ExplorerViewModel.CanFindUsages(collection));
+                });
+        }
+        finally
+        {
+            await using (var session = await Bengine.Introspection.Tree.ObjectExplorer.OpenSessionAsync(server, null, database))
+            {
+                await session.Query.ExecuteAllAsync("db.dropDatabase()");
+            }
+
+            Bengine.Introspection.Tree.ObjectExplorer.Disconnect(server.Id);
+        }
+    }
+
     private static async Task Execute(string connectionString, string sql)
     {
         await using var connection = new Npgsql.NpgsqlConnection(connectionString);
@@ -264,7 +349,15 @@ public sealed class StudioUiTests
         Assert.Equal(("demo-pg", "Demo", 5433), (servers[1].Name, servers[1].Group, servers[1].Port));
     }
 
-    private static async Task WalkAsync(ServerStore store, string prefix, string[] path, string table, string database, string sql)
+    private static async Task WalkAsync(
+        ServerStore store,
+        string prefix,
+        string[] path,
+        string table,
+        string database,
+        string sql,
+        string ddlMarker = "CREATE TABLE",
+        Func<ExplorerViewModel, MainWindow, Task>? more = null)
     {
         var window = new MainWindow(store) { Width = 1440, Height = 900 };
         var vm = new ExplorerViewModel(store) { Dialogs = window };
@@ -295,7 +388,7 @@ public sealed class StudioUiTests
         quickDoc?.Hide();
 
         var ddl = await vm.OpenDdlAsync(tableItem);
-        Assert.Contains("CREATE TABLE", ddl!.Sql!);
+        Assert.Contains(ddlMarker, ddl!.Sql!);
         Shot(window, $"{prefix}-2-ddl");
 
         vm.OpenData(tableItem);
@@ -316,6 +409,11 @@ public sealed class StudioUiTests
         Assert.False(query.IsError, query.Status);
         Assert.NotNull(query.Plan);
         Shot(window, $"{prefix}-5-plan");
+
+        if (more is not null)
+        {
+            await more(vm, window);
+        }
 
         window.Close();
     }

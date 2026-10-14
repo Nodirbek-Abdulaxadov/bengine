@@ -7,6 +7,7 @@ using Bengine.Introspection.Abstractions;
 using Bengine.Introspection.Catalog;
 using Bengine.Introspection.Connection;
 using Bengine.Introspection.Data;
+using Bengine.Introspection.Mongo;
 using Bengine.Introspection.Providers;
 
 /// <summary>How a session is opened.</summary>
@@ -18,8 +19,9 @@ public sealed record SessionOptions
     /// <summary>
     /// Gets a value indicating whether the session must not change the database.
     /// PostgreSQL and MySQL enforce it on the server (read-only transactions) and
-    /// SQLite through <c>query_only</c>; SQL Server has no session switch, so
-    /// callers must also refuse modifying statements themselves.
+    /// SQLite through <c>query_only</c>; SQL Server and Oracle have no session
+    /// switch, so callers must also refuse modifying statements themselves; the
+    /// MongoDB console refuses commands that can write.
     /// </summary>
     public bool ReadOnly { get; init; }
 }
@@ -35,10 +37,14 @@ public sealed record SessionOptions
 /// (manual-commit mode); every component enlists in it. Open it with
 /// <see cref="OpenAsync(DatabaseProvider, string, CancellationToken)"/> and
 /// dispose it to close the connection (an open transaction is rolled back).
+/// A MongoDB session has no SQL connection: its components speak to the
+/// server's shared client (see <see cref="MongoConnection"/>), and it holds no
+/// transactions.
 /// </summary>
 public sealed class DatabaseSession : IAsyncDisposable
 {
-    private readonly DbConnection _connection;
+    private readonly DbConnection? _connection;
+    private readonly MongoConnection? _mongo;
     private DbTransaction? _transaction;
 
     private DatabaseSession(DbConnection connection, DatabaseProvider provider, SessionOptions options)
@@ -53,6 +59,19 @@ public sealed class DatabaseSession : IAsyncDisposable
         Writer = new RelationalDataWriter(connection, provider) { TransactionSource = () => _transaction };
         Query = new RelationalQueryExecutor(connection, provider) { TransactionSource = () => _transaction };
         HookServerMessages();
+    }
+
+    private DatabaseSession(MongoConnection mongo, SessionOptions options)
+    {
+        _mongo = mongo;
+        Provider = DatabaseProvider.MongoDb;
+        Options = options;
+        var schemaProvider = new MongoSchemaProvider(mongo);
+        Explorer = schemaProvider;
+        Introspector = schemaProvider;
+        Data = new MongoDataReader(mongo);
+        Writer = new MongoDataWriter(mongo);
+        Query = new MongoQueryExecutor(mongo, options.ReadOnly);
     }
 
     /// <summary>Raised for informational server output: PostgreSQL notices, SQL Server <c>PRINT</c>, MySQL warnings.</summary>
@@ -83,10 +102,14 @@ public sealed class DatabaseSession : IAsyncDisposable
     public bool InTransaction => _transaction is not null;
 
     /// <summary>Gets the database the connection is attached to.</summary>
-    public string Database => _connection is Oracle.ManagedDataAccess.Client.OracleConnection oracle ? oracle.ServiceName : _connection.Database;
+    public string Database => _mongo?.DatabaseName
+        ?? (_connection is Oracle.ManagedDataAccess.Client.OracleConnection oracle ? oracle.ServiceName : _connection!.Database);
 
     /// <summary>Gets a value indicating whether the connection is still open.</summary>
-    public bool IsOpen => _connection.State == ConnectionState.Open;
+    public bool IsOpen => _mongo is not null || _connection!.State == ConnectionState.Open;
+
+    /// <summary>Gets the MongoDB connection of a MongoDB session, or <c>null</c>.</summary>
+    public MongoConnection? Mongo => _mongo;
 
     /// <summary>Opens a session against a live database.</summary>
     /// <param name="provider">The target provider.</param>
@@ -113,6 +136,11 @@ public sealed class DatabaseSession : IAsyncDisposable
         SessionOptions options,
         CancellationToken cancellationToken = default)
     {
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return Open(await MongoConnection.OpenAsync(connectionString, cancellationToken: cancellationToken).ConfigureAwait(false), options);
+        }
+
         var connection = await DatabaseConnectionFactory
             .OpenAsync(provider, connectionString, cancellationToken)
             .ConfigureAwait(false);
@@ -135,6 +163,12 @@ public sealed class DatabaseSession : IAsyncDisposable
 
         return new DatabaseSession(connection, provider, options);
     }
+
+    /// <summary>Opens a session over an open MongoDB connection.</summary>
+    /// <param name="connection">The connection.</param>
+    /// <param name="options">The session options.</param>
+    /// <returns>The session.</returns>
+    public static DatabaseSession Open(MongoConnection connection, SessionOptions options) => new(connection, options);
 
     /// <summary>Verifies that a connection string can connect, without keeping the session.</summary>
     /// <param name="provider">The target provider.</param>
@@ -169,6 +203,11 @@ public sealed class DatabaseSession : IAsyncDisposable
             throw new IntrospectionException("A transaction is already open.");
         }
 
+        if (_connection is null)
+        {
+            throw new IntrospectionException("MongoDB consoles run each command on its own; transactions are not available.");
+        }
+
         try
         {
             _transaction = await _connection.BeginTransactionAsync(isolation, cancellationToken).ConfigureAwait(false);
@@ -195,8 +234,9 @@ public sealed class DatabaseSession : IAsyncDisposable
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The catalog.</returns>
     /// <exception cref="IntrospectionException">A catalog query failed.</exception>
-    public Task<DatabaseCatalog> ReadCatalogAsync(CancellationToken cancellationToken = default) =>
-        CatalogReader.ReadAsync(_connection, Provider, _transaction, cancellationToken);
+    public Task<DatabaseCatalog> ReadCatalogAsync(CancellationToken cancellationToken = default) => _mongo is not null
+        ? MongoCatalog.ReadAsync(_mongo, cancellationToken)
+        : CatalogReader.ReadAsync(_connection!, Provider, _transaction, cancellationToken);
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
@@ -216,7 +256,11 @@ public sealed class DatabaseSession : IAsyncDisposable
             _transaction = null;
         }
 
-        await _connection.DisposeAsync().ConfigureAwait(false);
+        // A MongoDB client is shared by the server's sessions and stays open.
+        if (_connection is not null)
+        {
+            await _connection.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private async Task EndTransactionAsync(bool commit, CancellationToken cancellationToken)

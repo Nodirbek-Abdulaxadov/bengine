@@ -2,6 +2,7 @@ namespace Bengine.Introspection.Sql;
 
 using Bengine.Enums;
 using Bengine.Introspection.Catalog;
+using Bengine.Introspection.Mongo;
 using Bengine.Introspection.Tree;
 
 /// <summary>
@@ -20,6 +21,14 @@ public static class ObjectSql
         or NodeKind.TriggerFunction or NodeKind.Schema or NodeKind.Database or NodeKind.Column or NodeKind.ForeignTable
         or NodeKind.Type or NodeKind.Domain or NodeKind.Package or NodeKind.Synonym;
 
+    /// <summary>Gets whether an object kind can be dropped from the explorer on a provider.</summary>
+    /// <param name="provider">The provider.</param>
+    /// <param name="kind">The node kind.</param>
+    /// <returns><c>true</c> if <see cref="Drop"/> supports it.</returns>
+    public static bool CanDrop(DatabaseProvider provider, NodeKind kind) => provider == DatabaseProvider.MongoDb
+        ? kind is NodeKind.Table or NodeKind.View or NodeKind.Index or NodeKind.Database or NodeKind.Column
+        : CanDrop(kind);
+
     /// <summary>Builds the statement that drops an object.</summary>
     /// <param name="provider">The provider.</param>
     /// <param name="node">The object.</param>
@@ -34,6 +43,11 @@ public static class ObjectSql
         if (provider == DatabaseProvider.Oracle)
         {
             return OracleDrop(node, q, name, cascade);
+        }
+
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return MongoDrop(node);
         }
 
         var relation = node.Relation is { } r ? Qualified(provider, node.Schema, r) : null;
@@ -88,12 +102,27 @@ public static class ObjectSql
         _ => throw new NotSupportedException($"{node.Kind} objects cannot be dropped from the explorer on Oracle."),
     } + ";";
 
+    // MongoDB: shell commands; dropping a field unsets it in every document.
+    private static string MongoDrop(NodeRef node) => node.Kind switch
+    {
+        NodeKind.Table or NodeKind.View => $"{MongoShell.Collection(node.Name!)}.drop();",
+        NodeKind.Index => $"{MongoShell.Collection(node.Relation!)}.dropIndex({MongoValues.Quote(node.Name!)});",
+        NodeKind.Database => $"db.getSiblingDB({MongoValues.Quote(node.Name!)}).dropDatabase();",
+        NodeKind.Column => $"{MongoShell.Collection(node.Relation!)}.updateMany({{}}, {{$unset: {{{MongoValues.Key(node.Name!)}: \"\"}}}});",
+        _ => throw new NotSupportedException($"{node.Kind} objects cannot be dropped from the explorer on MongoDB."),
+    };
+
     /// <summary>Builds the statement that empties a table.</summary>
     /// <param name="provider">The provider.</param>
     /// <param name="node">The table.</param>
     /// <returns>The statement.</returns>
     public static string Truncate(DatabaseProvider provider, NodeRef node)
     {
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return $"{MongoShell.Collection(node.Name!)}.deleteMany({{}});";
+        }
+
         var q = Qualified(provider, node.Schema, node.Name!);
         return provider == DatabaseProvider.Sqlite ? $"DELETE FROM {q};" : $"TRUNCATE TABLE {q};";
     }
@@ -103,6 +132,14 @@ public static class ObjectSql
     /// <returns><c>true</c> if <see cref="Rename"/> supports it.</returns>
     public static bool CanRename(NodeKind kind) => kind is NodeKind.Table or NodeKind.View or NodeKind.Column or NodeKind.MaterializedView
         or NodeKind.Sequence or NodeKind.Index or NodeKind.Schema;
+
+    /// <summary>Gets whether an object kind can be renamed from the explorer on a provider.</summary>
+    /// <param name="provider">The provider.</param>
+    /// <param name="kind">The node kind.</param>
+    /// <returns><c>true</c> if <see cref="Rename"/> supports it.</returns>
+    public static bool CanRename(DatabaseProvider provider, NodeKind kind) => provider == DatabaseProvider.MongoDb
+        ? kind is NodeKind.Table or NodeKind.Column
+        : CanRename(kind);
 
     /// <summary>Builds the statement that renames an object.</summary>
     /// <param name="provider">The provider.</param>
@@ -115,6 +152,18 @@ public static class ObjectSql
         var name = node.Name!;
         var q = Qualified(provider, node.Schema, name);
         var to = Quote(provider, newName);
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            // A nested field keeps its parent path.
+            var parent = name.LastIndexOf('.') is var dot and > 0 ? name[..(dot + 1)] : string.Empty;
+            return node.Kind switch
+            {
+                NodeKind.Table => $"{MongoShell.Collection(name)}.renameCollection({MongoValues.Quote(newName)});",
+                NodeKind.Column => $"{MongoShell.Collection(node.Relation!)}.updateMany({{}}, {{$rename: {{{MongoValues.Key(name)}: {MongoValues.Quote(parent + newName)}}}}});",
+                _ => throw new NotSupportedException($"Renaming a {node.Kind} is not supported on MongoDB."),
+            };
+        }
+
         if (provider == DatabaseProvider.Oracle)
         {
             return node.Kind switch
@@ -165,6 +214,11 @@ public static class ObjectSql
     /// <returns>The SQL.</returns>
     public static string Template(DatabaseProvider provider, CatalogRelation relation, string kind)
     {
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return MongoTemplate(relation, kind);
+        }
+
         var q = Qualified(provider, relation.Schema, relation.Name);
         var columns = relation.Columns.Select(c => Quote(provider, c.Name)).ToList();
         var keys = relation.Columns.Where(c => c.IsPrimaryKey).Select(c => c.Name).ToList();
@@ -192,13 +246,29 @@ public static class ObjectSql
         };
     }
 
+    // MongoDB: shell commands over the collection's top-level fields.
+    private static string MongoTemplate(CatalogRelation relation, string kind)
+    {
+        var target = MongoShell.Collection(relation.Name);
+        var fields = relation.Columns.Where(c => c.Name != "_id" && !c.Name.Contains('.', StringComparison.Ordinal)).Select(c => $"{MongoValues.Key(c.Name)}: null").ToList();
+        var document = fields.Count == 0 ? "{}" : "{\n    " + string.Join(",\n    ", fields) + "\n}";
+        const string key = "{_id: null /* the document's _id */}";
+        return kind switch
+        {
+            "insert" => $"{target}.insertOne({document});",
+            "update" => $"{target}.updateOne({key}, {{$set: {document}}});",
+            "delete" => $"{target}.deleteOne({key});",
+            _ => $"{target}.find({{}}).limit(100);",
+        };
+    }
+
     /// <summary>Renders a possibly schema-qualified name, quoting only where needed.</summary>
     /// <param name="provider">The provider.</param>
     /// <param name="schema">The schema, or <c>null</c>.</param>
     /// <param name="name">The name.</param>
     /// <returns>The qualified name.</returns>
     public static string Qualified(DatabaseProvider provider, string? schema, string name) =>
-        schema is { Length: > 0 } && provider != DatabaseProvider.Sqlite ? $"{Quote(provider, schema)}.{Quote(provider, name)}" : Quote(provider, name);
+        schema is { Length: > 0 } && provider is not (DatabaseProvider.Sqlite or DatabaseProvider.MongoDb) ? $"{Quote(provider, schema)}.{Quote(provider, name)}" : Quote(provider, name);
 
     private static string Quote(DatabaseProvider provider, string name) => SqlKeywords.QuoteIfNeeded(name, provider);
 }

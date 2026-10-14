@@ -126,6 +126,25 @@ public sealed class DataGripImporterTests : IDisposable
     }
 
     [Fact]
+    public void Maps_mongodb_urls()
+    {
+        Assert.True(DataGripImporter.TryMap("m", "g", "mongodb://ann@db.local:27018/shop?authSource=admin&readPreference=secondary", null, out var plain, out var reason), reason);
+        Assert.Equal((DatabaseProvider.MongoDb, "db.local", 27018, "admin", "ann"), (plain!.Provider, plain.Host, plain.Port, plain.MaintenanceDatabase, plain.Username));
+        Assert.Equal("readPreference=secondary", plain.Options);
+
+        Assert.True(DataGripImporter.TryMap("m", "g", "jdbc:mongodb://localhost/", "root", out var local, out _));
+        Assert.Equal(("localhost", 27017, "admin", "root"), (local!.Host, local.Port, local.MaintenanceDatabase, local.Username));
+
+        Assert.True(DataGripImporter.TryMap("atlas", "g", "mongodb+srv://bob:secret@cluster0.example.net/app", null, out var atlas, out _));
+        Assert.StartsWith("mongodb+srv://cluster0.example.net/app", atlas!.Host, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret", atlas.Host, StringComparison.Ordinal);
+        Assert.Equal(("bob", "app"), (atlas.Username, atlas.MaintenanceDatabase));
+
+        Assert.False(DataGripImporter.TryMap("bad", "g", "mongodb://", null, out _, out var invalid));
+        Assert.Contains("MongoDB", invalid);
+    }
+
+    [Fact]
     public void Skips_unsupported_drivers_with_a_reason()
     {
         var skipped = Assert.Single(Import().Skipped);

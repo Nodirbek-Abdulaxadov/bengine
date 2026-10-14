@@ -712,6 +712,12 @@ public partial class MainWindow : Window, IDialogService
             return items;
         }
 
+        if (server.Provider == Bengine.Enums.DatabaseProvider.MongoDb)
+        {
+            BuildMongoMenu();
+            return items;
+        }
+
         // Open, navigate, document.
         if (relation)
         {
@@ -830,7 +836,76 @@ public partial class MainWindow : Window, IDialogService
         Add("Copy Reference", () => _ = window.SetClipboardAsync(ExplorerViewModel.ReferenceOf(item)), "object.copyReference");
         Add("Refresh", () => _ = item.RefreshAsync(), "tree.refresh");
         return items;
+
+        // MongoDB: collections, views, fields, and indexes; no SQL tools.
+        void BuildMongoMenu()
+        {
+            if (relation)
+            {
+                Add("Edit Data", () => vm.OpenData(item), "object.open");
+            }
+            else if (kind == "Column")
+            {
+                Add("Edit Collection Data", () => vm.OpenItem(item), "object.open");
+            }
+
+            if (kind is "Table" or "View" or "Index")
+            {
+                Add("Go to DDL", () => _ = vm.OpenDdlAsync(item), "object.ddl");
+            }
+
+            if (!item.IsFolder)
+            {
+                Add("Quick Documentation", () => _ = window.ShowQuickDocAsync(item), "object.quickDoc");
+            }
+
+            Separate();
+            var created = new List<Control>();
+            if (kind is "Database" or "TablesFolder")
+            {
+                created.Add(Item("Collection…", () => _ = vm.NewCollectionAsync(item), enabled: !readOnly));
+            }
+
+            created.Add(Item("Query Console", () => _ = vm.OpenQueryAsync(server, r?.Database), "query.new"));
+            Sub("New", created);
+            if (ExplorerViewModel.CanRename(item))
+            {
+                Add("Rename…", () => _ = vm.RenameAsync(item), "object.rename", !readOnly);
+            }
+
+            if (ExplorerViewModel.CanDrop(item))
+            {
+                Add("Drop…", () => _ = vm.DropAsync(item), "object.drop", !readOnly);
+            }
+
+            if (kind == "Table")
+            {
+                Add("Delete All Documents…", () => _ = vm.TruncateAsync(item), enabled: !readOnly);
+            }
+
+            Separate();
+            if (relation)
+            {
+                Sub("Shell Scripts",
+                [
+                    Item("find", () => _ = vm.GenerateSqlAsync(item, "select")),
+                    Item("insertOne", () => _ = vm.GenerateSqlAsync(item, "insert")),
+                    Item("updateOne", () => _ = vm.GenerateSqlAsync(item, "update")),
+                    Item("deleteOne", () => _ = vm.GenerateSqlAsync(item, "delete")),
+                    Item("DDL to Console", () => _ = vm.GenerateSqlAsync(item, "ddl")),
+                ]);
+            }
+
+            Add("Jump to Query Console", () => _ = vm.OpenQueryAsync(server, r?.Database, relation ? SelectTopMongo(r!.Name!) : null), "object.console");
+            Separate();
+            Add("Copy Reference", () => _ = window.SetClipboardAsync(ExplorerViewModel.ReferenceOf(item)), "object.copyReference");
+            Add("Refresh", () => _ = item.RefreshAsync(), "tree.refresh");
+        }
     }
+
+    // A provider-correct "first 100 rows" query for the Query Tool.
+    private static string SelectTopMongo(string collection) =>
+        $"{Bengine.Introspection.Mongo.MongoShell.Collection(collection)}.find({{}}).limit(100)";
 
     // A provider-correct "first 100 rows" query for the Query Tool.
     private static string SelectTop(Bengine.Enums.DatabaseProvider provider, string? schema, string name)

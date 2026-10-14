@@ -35,7 +35,7 @@ app.MapGet("/api/languages", () => Enum.GetNames<Language>());
 // --- Generation endpoints. The request body is the schema.json document. ---
 app.MapPost("/api/generate/sql/{provider}", async (string provider, HttpRequest request) =>
 {
-    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target))
+    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target) || !Bengine.Constants.SchemaConstants.AllProviders.Contains(target))
     {
         return Results.BadRequest(new { error = $"Unknown provider '{provider}'." });
     }
@@ -61,7 +61,7 @@ app.MapPost("/api/generate/code/{language}", async (string language, HttpRequest
 
 app.MapPost("/api/generate/migration/{provider}", async (string provider, HttpRequest request) =>
 {
-    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target))
+    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target) || !Bengine.Constants.SchemaConstants.AllProviders.Contains(target))
     {
         return Results.BadRequest(new { error = $"Unknown provider '{provider}'." });
     }
@@ -75,7 +75,7 @@ app.MapPost("/api/generate/migration/{provider}", async (string provider, HttpRe
 
 app.MapPost("/api/validate/{provider}", async (string provider, HttpRequest request) =>
 {
-    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target))
+    if (!Enum.TryParse<DatabaseProvider>(provider, ignoreCase: true, out var target) || !Bengine.Constants.SchemaConstants.AllProviders.Contains(target))
     {
         return Results.BadRequest(new { error = $"Unknown provider '{provider}'." });
     }
@@ -99,7 +99,7 @@ app.MapPost("/api/import/sql", (ImportSqlRequest request) =>
     if (!string.IsNullOrWhiteSpace(request.Dialect)
         && !request.Dialect.Equals("auto", StringComparison.OrdinalIgnoreCase))
     {
-        if (!Enum.TryParse<DatabaseProvider>(request.Dialect, ignoreCase: true, out var parsed))
+        if (!Enum.TryParse<DatabaseProvider>(request.Dialect, ignoreCase: true, out var parsed) || !Bengine.Constants.SchemaConstants.AllProviders.Contains(parsed))
         {
             return Results.BadRequest(new { error = $"Unknown dialect '{request.Dialect}'." });
         }

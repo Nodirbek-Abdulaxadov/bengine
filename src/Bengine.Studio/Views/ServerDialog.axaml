@@ -59,7 +59,7 @@
           <TextBlock Grid.Row="1" Classes="label" Text="Database file" IsVisible="{Binding IsSqlite}" />
           <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding FilePath}" Watermark="/path/to/app.db" IsVisible="{Binding IsSqlite}" />
           <TextBlock Grid.Row="2" Classes="label" Text="Host name/address" IsVisible="{Binding IsNetwork}" />
-          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Host}" IsVisible="{Binding IsNetwork}" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Host}" Watermark="{Binding HostHint}" IsVisible="{Binding IsNetwork}" />
           <TextBlock Grid.Row="3" Classes="label" Text="Port" IsVisible="{Binding IsNetwork}" />
           <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Port}" Minimum="1" Maximum="65535" FormatString="0" ShowButtonSpinner="False" IsVisible="{Binding IsNetwork}" />
           <TextBlock Grid.Row="4" Classes="label" Text="{Binding DatabaseLabel}" IsVisible="{Binding IsNetwork}" />
@@ -109,9 +109,9 @@
       </TabItem>
       <TabItem Header="Advanced">
         <StackPanel Spacing="8" Margin="0,10">
-          <TextBlock Classes="dim" Text="Connection parameters (connection-string form; the Connection tab overrides them)" TextWrapping="Wrap" />
+          <TextBlock Classes="dim" Text="{Binding OptionsLabel}" TextWrapping="Wrap" />
           <TextBox Text="{Binding Options}" AcceptsReturn="True" Height="110" FontFamily="{StaticResource Mono}"
-                   Watermark="SSL Mode=Require;Timeout=10   ·   TrustServerCertificate=True" TextWrapping="Wrap" />
+                   Watermark="{Binding OptionsHint}" TextWrapping="Wrap" />
         </StackPanel>
       </TabItem>
     </TabControl>

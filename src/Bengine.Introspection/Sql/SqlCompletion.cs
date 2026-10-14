@@ -116,6 +116,11 @@ public static class SqlCompletion
     {
         caret = Math.Clamp(caret, 0, text.Length);
         var provider = catalog.Provider;
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return Mongo.MongoCompletion.Complete(text, caret, catalog);
+        }
+
         var lexemes = SqlLexer.Lex(text, provider);
 
         // No completion inside a comment, a string, or a closed quoted name.

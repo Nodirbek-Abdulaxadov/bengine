@@ -32,6 +32,11 @@ public static class SqlScript
     /// <returns>The non-empty statements in order.</returns>
     public static IReadOnlyList<SqlStatement> Split(string sql, DatabaseProvider provider)
     {
+        if (provider == DatabaseProvider.MongoDb)
+        {
+            return Mongo.MongoShell.Split(sql);
+        }
+
         var lexemes = SqlLexer.Lex(sql, provider);
         var statements = new List<SqlStatement>();
         var delimiter = ";";

@@ -34,10 +34,11 @@ public static class ConnectionStringFactory
                 DatabaseProvider.MySql => BuildMySql(server, database, secret),
                 DatabaseProvider.Sqlite => BuildSqlite(server),
                 DatabaseProvider.Oracle => BuildOracle(server, database, secret),
+                DatabaseProvider.MongoDb => BuildMongo(server, database, secret),
                 _ => throw new ArgumentOutOfRangeException(nameof(server), server.Provider, "Unknown database provider."),
             };
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or MongoDB.Driver.MongoConfigurationException)
         {
             throw new IntrospectionException($"The connection options for '{server.Name}' are invalid. {ex.Message}", ex);
         }
@@ -199,6 +200,52 @@ public static class ConnectionStringFactory
         }
 
         return builder.ConnectionString;
+    }
+
+    // MongoDB: a URL. The host may itself be a full mongodb:// or mongodb+srv://
+    // URL (Atlas); options are URL query parameters (replicaSet=rs0&…); the
+    // maintenance database is the authentication database.
+    private static string BuildMongo(ServerProfile server, string? database, string? password)
+    {
+        var host = server.Host?.Trim() ?? "localhost";
+        var isUrl = host.StartsWith("mongodb://", StringComparison.OrdinalIgnoreCase) || host.StartsWith("mongodb+srv://", StringComparison.OrdinalIgnoreCase);
+        var url = isUrl ? host : $"mongodb://{(host.Contains(':') && !host.StartsWith('[') ? $"[{host}]" : host)}:{server.Port ?? 27017}/";
+        if (!string.IsNullOrWhiteSpace(server.Options))
+        {
+            var options = string.Join('&', server.Options.Split(['\n', '\r', '&'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(o => o.TrimStart('?')));
+            url += (url.Contains('?') ? "&" : url.EndsWith('/') ? "?" : "/?") + options;
+        }
+
+        var builder = new MongoDB.Driver.MongoUrlBuilder(url);
+        if (!isUrl && builder.Servers.Count() == 1 && builder.ReplicaSetName is null)
+        {
+            // One host (possibly through an SSH tunnel) is talked to directly, not discovered as a replica set.
+            builder.DirectConnection = true;
+        }
+
+        if (!string.IsNullOrEmpty(server.Username))
+        {
+            builder.Username = server.Username;
+            builder.Password = password;
+            builder.AuthenticationSource ??= server.MaintenanceDatabase ?? "admin";
+        }
+
+        builder.DatabaseName = database ?? server.MaintenanceDatabase ?? builder.DatabaseName ?? "admin";
+        switch (Ssl(server.SslMode))
+        {
+            case "disable":
+                builder.UseTls = false;
+                break;
+            case "prefer" or "require":
+                builder.UseTls = true;
+                builder.AllowInsecureTls = true;
+                break;
+            case "verify-ca" or "verify-full":
+                builder.UseTls = true;
+                break;
+        }
+
+        return builder.ToString();
     }
 
     // ReadWrite (not ReadWriteCreate): a mistyped path must fail rather than

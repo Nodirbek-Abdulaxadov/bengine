@@ -4,6 +4,7 @@ using System.Data.Common;
 using System.Text.RegularExpressions;
 using Bengine.Enums;
 using Bengine.Introspection.Connection;
+using Bengine.Introspection.Mongo;
 using Bengine.Introspection.Servers;
 
 /// <summary>
@@ -29,6 +30,12 @@ public static partial class ObjectExplorer
         NodeRef node,
         CancellationToken cancellationToken = default)
     {
+        if (server.Provider == DatabaseProvider.MongoDb)
+        {
+            var mongo = await OpenMongoAsync(server, password, node.Database, cancellationToken).ConfigureAwait(false);
+            return await new MongoObjectTree(mongo).GetChildrenAsync(node, cancellationToken).ConfigureAwait(false);
+        }
+
         await using var connection = await OpenAsync(server, password, node.Database, cancellationToken).ConfigureAwait(false);
         return await Create(server.Provider, connection).GetChildrenAsync(node, cancellationToken).ConfigureAwait(false);
     }
@@ -65,9 +72,18 @@ public static partial class ObjectExplorer
 
         // Database properties come from server-wide catalogs; read them through the
         // maintenance database so a database that refuses connections still shows.
-        var database = node.Kind == NodeKind.Database ? null : node.Database;
-        await using var connection = await OpenAsync(server, password, database, cancellationToken).ConfigureAwait(false);
-        var properties = await Create(server.Provider, connection).GetPropertiesAsync(node, cancellationToken).ConfigureAwait(false);
+        var database = node.Kind == NodeKind.Database && server.Provider != DatabaseProvider.MongoDb ? null : node.Database;
+        ObjectProperties properties;
+        if (server.Provider == DatabaseProvider.MongoDb)
+        {
+            var mongo = await OpenMongoAsync(server, password, database, cancellationToken).ConfigureAwait(false);
+            properties = await new MongoObjectTree(mongo).GetPropertiesAsync(node, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await using var connection = await OpenAsync(server, password, database, cancellationToken).ConfigureAwait(false);
+            properties = await Create(server.Provider, connection).GetPropertiesAsync(node, cancellationToken).ConfigureAwait(false);
+        }
 
         if (node.Kind == NodeKind.Server)
         {
@@ -101,6 +117,12 @@ public static partial class ObjectExplorer
         string? database,
         CancellationToken cancellationToken = default)
     {
+        if (server.Provider == DatabaseProvider.MongoDb)
+        {
+            var mongo = await OpenMongoAsync(server, password, database, cancellationToken).ConfigureAwait(false);
+            return DatabaseSession.Open(mongo, new SessionOptions { ReadOnly = server.ReadOnly });
+        }
+
         var routed = await SshTunnels.RouteAsync(server, cancellationToken).ConfigureAwait(false);
         return await DatabaseSession.OpenAsync(
             server.Provider,
@@ -117,6 +139,12 @@ public static partial class ObjectExplorer
     /// <exception cref="IntrospectionException">The connection could not be opened.</exception>
     public static async Task TestAsync(ServerProfile server, string? password, CancellationToken cancellationToken = default)
     {
+        if (server.Provider == DatabaseProvider.MongoDb)
+        {
+            await OpenMongoAsync(server, password, null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         await using var connection = await OpenAsync(server, password, null, cancellationToken).ConfigureAwait(false);
     }
 
@@ -142,10 +170,20 @@ public static partial class ObjectExplorer
                     return true;
                 case Npgsql.NpgsqlException npgsql when npgsql.Message.Contains("password", StringComparison.OrdinalIgnoreCase):
                     return true;
+                case MongoDB.Driver.MongoException mongo when MongoConnection.IsAuthenticationError(mongo):
+                    return true;
             }
         }
 
         return false;
+    }
+
+    /// <summary>Closes what stays open for a server between calls: its SSH tunnels and MongoDB clients.</summary>
+    /// <param name="serverId">The server's id.</param>
+    public static void Disconnect(string serverId)
+    {
+        SshTunnels.Close(serverId);
+        MongoConnection.Close(serverId);
     }
 
     /// <summary>Creates the provider's tree over an open connection.</summary>
@@ -175,6 +213,12 @@ public static partial class ObjectExplorer
     {
         var routed = await SshTunnels.RouteAsync(server, cancellationToken).ConfigureAwait(false);
         return await DatabaseConnectionFactory.OpenAsync(server.Provider, ConnectionStringFactory.Build(routed, database, password), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<MongoConnection> OpenMongoAsync(ServerProfile server, string? password, string? database, CancellationToken cancellationToken)
+    {
+        var routed = await SshTunnels.RouteAsync(server, cancellationToken).ConfigureAwait(false);
+        return await MongoConnection.OpenAsync(ConnectionStringFactory.Build(routed, database, password), server.Id, cancellationToken).ConfigureAwait(false);
     }
 
     [GeneratedRegex("(?<!^)([A-Z])")]

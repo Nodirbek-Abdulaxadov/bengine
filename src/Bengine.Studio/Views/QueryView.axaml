@@ -29,12 +29,13 @@
             </Button.Flyout>
           </Button>
           <Border Classes="sep" />
-          <TextBlock Classes="dim" Text="Tx" VerticalAlignment="Center" Margin="0,0,4,0" />
-          <ComboBox ItemsSource="{Binding TransactionModes}" SelectedItem="{Binding TransactionMode}" MinWidth="86" Margin="0,0,4,0" ToolTip.Tip="Auto-commit, or manual transactions ended with Commit/Rollback" />
+          <TextBlock Classes="dim" Text="Tx" VerticalAlignment="Center" Margin="0,0,4,0" IsVisible="{Binding SupportsTransactions}" />
+          <ComboBox ItemsSource="{Binding TransactionModes}" SelectedItem="{Binding TransactionMode}" MinWidth="86" Margin="0,0,4,0" ToolTip.Tip="Auto-commit, or manual transactions ended with Commit/Rollback"
+                    IsVisible="{Binding SupportsTransactions}" />
           <ComboBox ItemsSource="{Binding IsolationLevels}" SelectedItem="{Binding Isolation}" MinWidth="110" Margin="0,0,4,0"
                     IsVisible="{Binding TransactionMode, Converter={x:Static c:Converters.IsManual}}" ToolTip.Tip="Isolation level of new transactions" />
-          <Button Classes="ghost" Content="✓ Commit" Command="{Binding CommitCommand}" IsEnabled="{Binding InTransaction}" Margin="0,0,4,0" />
-          <Button Classes="ghost" Content="↶ Rollback" Command="{Binding RollbackCommand}" IsEnabled="{Binding InTransaction}" Margin="0,0,4,0" />
+          <Button Classes="ghost" Content="✓ Commit" Command="{Binding CommitCommand}" IsEnabled="{Binding InTransaction}" Margin="0,0,4,0" IsVisible="{Binding SupportsTransactions}" />
+          <Button Classes="ghost" Content="↶ Rollback" Command="{Binding RollbackCommand}" IsEnabled="{Binding InTransaction}" Margin="0,0,4,0" IsVisible="{Binding SupportsTransactions}" />
           <Border Background="#3a2f12" CornerRadius="3" Padding="6,1" IsVisible="{Binding InTransaction}" VerticalAlignment="Center" Margin="0,0,4,0">
             <TextBlock Foreground="#e0b341" FontSize="11" Text="{Binding PendingStatements, StringFormat='tx open · {0}'}" />
           </Border>

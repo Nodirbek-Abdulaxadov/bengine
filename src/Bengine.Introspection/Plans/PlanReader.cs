@@ -13,8 +13,10 @@ using Bengine.Introspection.Sql;
 /// <see cref="QueryPlan"/>: PostgreSQL <c>EXPLAIN (FORMAT JSON)</c>, MySQL
 /// <c>EXPLAIN FORMAT=TREE</c> / <c>EXPLAIN ANALYZE</c> (MariaDB and older MySQL:
 /// the tabular <c>EXPLAIN</c> / <c>ANALYZE</c>), SQL Server showplan XML, and
-/// SQLite <c>EXPLAIN QUERY PLAN</c>. Analyzing executes the statement; a
-/// modifying statement is analyzed inside a transaction that is rolled back.
+/// SQLite <c>EXPLAIN QUERY PLAN</c>, Oracle <c>EXPLAIN PLAN</c>, and MongoDB's
+/// <c>explain</c> command. Analyzing executes the statement; a modifying
+/// statement is analyzed inside a transaction that is rolled back (MongoDB's
+/// explain never applies writes).
 /// </summary>
 public static partial class PlanReader
 {
@@ -28,6 +30,13 @@ public static partial class PlanReader
     public static async Task<QueryPlan> ExplainAsync(DatabaseSession session, string sql, bool analyze, CancellationToken cancellationToken = default)
     {
         sql = sql.Trim().TrimEnd(';');
+        if (session.Provider == DatabaseProvider.MongoDb)
+        {
+            var mongo = await MongoAsync(session, sql, analyze, cancellationToken).ConfigureAwait(false);
+            mongo.Annotate();
+            return mongo;
+        }
+
         var info = SqlStatementInfo.Classify(sql, session.Provider);
         var rollback = analyze && info.CanModify && !session.InTransaction;
         if (rollback)

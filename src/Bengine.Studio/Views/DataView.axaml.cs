@@ -284,15 +284,15 @@ public partial class DataView : UserControl
             Item("CSV", () => _ = CopyAsync("csv")),
             Item("JSON", () => _ = CopyAsync("json")),
             Item("Markdown", () => _ = CopyAsync("markdown")),
-            Item("SQL INSERT", () => _ = CopyAsync("sql-insert")),
-            Item("SQL UPDATE", () => _ = CopyAsync("sql-update")),
-            Item("WHERE condition", () => _ = CopyAsync("where")),
+            Item(vm.InsertLabel, () => _ = CopyAsync("sql-insert")),
+            Item(vm.UpdateLabel, () => _ = CopyAsync("sql-update")),
+            Item(vm.ConditionLabel, () => _ = CopyAsync("where")),
         }));
         items.Add(Item("Paste", () => _ = PasteAsync(), "Ctrl+V", vm.CanEdit));
         items.Add(new Separator());
         items.Add(Item("Edit Value…", () => _ = EditValueAsync(), "Shift+Enter", row is not null && index >= 0));
         items.Add(Item("Set NULL", () => vm.SetNullCommand.Execute(null), "Ctrl+Alt+N", vm.CanEdit && index >= 0));
-        items.Add(Item("Set DEFAULT", () => vm.SetDefaultCommand.Execute(null), "Ctrl+Alt+D", vm.CanEdit && index >= 0));
+        items.Add(Item(vm.DefaultLabel, () => vm.SetDefaultCommand.Execute(null), "Ctrl+Alt+D", vm.CanEdit && index >= 0));
         if (row is not null && index >= 0)
         {
             items.Add(Group("Filter by Value", new[]
@@ -301,7 +301,7 @@ public partial class DataView : UserControl
                 Item($"<> this value", () => _ = vm.FilterByValueAsync(row, index, "<>")),
                 Item($"< this value", () => _ = vm.FilterByValueAsync(row, index, "<")),
                 Item($"> this value", () => _ = vm.FilterByValueAsync(row, index, ">")),
-                Item("LIKE %value%", () => _ = vm.FilterByValueAsync(row, index, "LIKE")),
+                Item(vm.IsMongo ? "contains (/value/i)" : "LIKE %value%", () => _ = vm.FilterByValueAsync(row, index, "LIKE")),
             }));
         }
 

@@ -46,7 +46,7 @@
               <MenuItem Header="TSV…" Command="{Binding ExportCommand}" CommandParameter="tsv" />
               <MenuItem Header="JSON…" Command="{Binding ExportCommand}" CommandParameter="json" />
               <MenuItem Header="Markdown…" Command="{Binding ExportCommand}" CommandParameter="markdown" />
-              <MenuItem Header="SQL INSERTs…" Command="{Binding ExportCommand}" CommandParameter="sql-insert" />
+              <MenuItem Header="{Binding InsertLabel, StringFormat='{}{0}…'}" Command="{Binding ExportCommand}" CommandParameter="sql-insert" />
               <MenuItem Header="Excel (.xlsx)…" Command="{Binding ExportCommand}" CommandParameter="xlsx" />
             </MenuFlyout>
           </Button.Flyout>
@@ -58,12 +58,12 @@
     <!-- WHERE / ORDER BY -->
     <Border DockPanel.Dock="Top" Background="{StaticResource Panel}" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,0,0,1" Padding="8,5">
       <Grid ColumnDefinitions="Auto,3*,Auto,2*,Auto">
-        <TextBlock Grid.Column="0" Text="WHERE" Foreground="#c792ea" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,0" />
-        <TextBox Grid.Column="1" Classes="clause" x:Name="Where" Text="{Binding WhereText}" Watermark="condition, e.g. status = 'active' AND created_at > now() - interval '7 days'">
+        <TextBlock Grid.Column="0" Text="{Binding WhereLabel}" Foreground="#c792ea" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,0" />
+        <TextBox Grid.Column="1" Classes="clause" x:Name="Where" Text="{Binding WhereText}" Watermark="{Binding WhereHint}">
           <TextBox.KeyBindings><KeyBinding Gesture="Enter" Command="{Binding ApplyFilterCommand}" /></TextBox.KeyBindings>
         </TextBox>
-        <TextBlock Grid.Column="2" Text="ORDER BY" Foreground="#c792ea" FontWeight="Bold" VerticalAlignment="Center" Margin="14,0,8,0" />
-        <TextBox Grid.Column="3" Classes="clause" Text="{Binding OrderByText}" Watermark="e.g. id DESC">
+        <TextBlock Grid.Column="2" Text="{Binding OrderByLabel}" Foreground="#c792ea" FontWeight="Bold" VerticalAlignment="Center" Margin="14,0,8,0" />
+        <TextBox Grid.Column="3" Classes="clause" Text="{Binding OrderByText}" Watermark="{Binding OrderByHint}">
           <TextBox.KeyBindings><KeyBinding Gesture="Enter" Command="{Binding ApplyFilterCommand}" /></TextBox.KeyBindings>
         </TextBox>
         <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4" Margin="8,0,0,0">

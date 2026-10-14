@@ -112,6 +112,7 @@ public sealed partial class ServerFormViewModel : ObservableObject
         new(DatabaseProvider.SqlServer, "Microsoft SQL Server"),
         new(DatabaseProvider.Sqlite, "SQLite"),
         new(DatabaseProvider.Oracle, "Oracle Database"),
+        new(DatabaseProvider.MongoDb, "MongoDB"),
     ];
 
     /// <summary>Gets the color choices (DataGrip-like: red for production, green for local…).</summary>
@@ -148,7 +149,25 @@ public sealed partial class ServerFormViewModel : ObservableObject
     public bool IsNetwork => !IsSqlite;
 
     /// <summary>Gets the caption of the database field: Oracle connects to a service (a pluggable database).</summary>
-    public string DatabaseLabel => SelectedProvider.Provider == DatabaseProvider.Oracle ? "Service name" : "Maintenance database";
+    public string DatabaseLabel => SelectedProvider.Provider switch
+    {
+        DatabaseProvider.Oracle => "Service name",
+        DatabaseProvider.MongoDb => "Authentication database",
+        _ => "Maintenance database",
+    };
+
+    /// <summary>Gets the host field's watermark: MongoDB also takes a whole connection URL (Atlas).</summary>
+    public string HostHint => SelectedProvider.Provider == DatabaseProvider.MongoDb ? "host, or mongodb+srv://cluster0.example.net" : string.Empty;
+
+    /// <summary>Gets the Advanced tab's explanation of the connection parameters.</summary>
+    public string OptionsLabel => SelectedProvider.Provider == DatabaseProvider.MongoDb
+        ? "Connection URL options, one per line (the Connection tab overrides them)"
+        : "Connection parameters (connection-string form; the Connection tab overrides them)";
+
+    /// <summary>Gets the Advanced tab's example parameters.</summary>
+    public string OptionsHint => SelectedProvider.Provider == DatabaseProvider.MongoDb
+        ? "replicaSet=rs0   ·   readPreference=secondaryPreferred   ·   authMechanism=SCRAM-SHA-256"
+        : "SSL Mode=Require;Timeout=10   ·   TrustServerCertificate=True";
 
     /// <summary>Gets the saved registration once <see cref="Save"/> succeeds.</summary>
     public ServerProfile? Saved { get; private set; }
@@ -161,6 +180,9 @@ public sealed partial class ServerFormViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSqlite));
         OnPropertyChanged(nameof(IsNetwork));
         OnPropertyChanged(nameof(DatabaseLabel));
+        OnPropertyChanged(nameof(HostHint));
+        OnPropertyChanged(nameof(OptionsLabel));
+        OnPropertyChanged(nameof(OptionsHint));
         if (_existing is not null)
         {
             return;
@@ -172,6 +194,7 @@ public sealed partial class ServerFormViewModel : ObservableObject
             DatabaseProvider.MySql => (3306, string.Empty, "root"),
             DatabaseProvider.SqlServer => (1433, "master", "sa"),
             DatabaseProvider.Oracle => (1521, "FREEPDB1", "system"),
+            DatabaseProvider.MongoDb => (27017, "admin", string.Empty),
             _ => (null, string.Empty, string.Empty),
         };
     }
@@ -218,7 +241,7 @@ public sealed partial class ServerFormViewModel : ObservableObject
         }
 
         Saved = _store.Upsert(Build());
-        Bengine.Introspection.Connection.SshTunnels.Close(Saved.Id);
+        ObjectExplorer.Disconnect(Saved.Id);
         Completed?.Invoke();
     }
 
