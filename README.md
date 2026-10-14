@@ -122,8 +122,8 @@ column names):
   `/api/db/*` endpoints (`/data`, `/table`, `/query`, `/row/insert`,
   `/row/update`, `/row/delete`, `/export`, …), which take either a registered
   `serverId` + `database` or a raw `provider` + `connectionString`.
-- **Desktop** — `Bengine.Studio`, an Avalonia app over the same engine
-  in-process.
+- **Desktop** — **Bengine Data Studio** (`Bengine.Studio`), an Avalonia app
+  over the same engine in-process, with DataGrip-style tools (below).
 
 PostgreSQL results are read in text format, as pgAdmin does: every type
 (including ones without a binary form, such as `aclitem` or extension types)
@@ -135,6 +135,37 @@ PostgreSQL coerces them to the column's type (`uuid`, `timestamp`, `bigint`, …
 > Tool **modify live data** when you edit rows or run DML/DDL. The API listens
 > on localhost only and holds session passwords in memory — do not expose it to
 > other machines, and connect only to databases you are authorized to use.
+
+### Bengine Data Studio (desktop)
+
+Everything in the explorer above, plus the tools of a database IDE, for
+PostgreSQL, MySQL/MariaDB, SQL Server, and SQLite:
+
+- **SQL editor** — completion of tables, columns, and foreign-key joins; the
+  statement under the caret (Ctrl+Enter) or the script (Ctrl+Shift+Enter);
+  cancel; parameters (`:name`, `?`); reformat; live templates; on-the-fly
+  inspections (unknown names, `UPDATE`/`DELETE` without `WHERE`, `= NULL`, …);
+  query history; manual transactions with isolation levels.
+- **Data editor** — edits, inserts, and deletes staged until Submit (with a SQL
+  preview), `WHERE`/`ORDER BY` filters, foreign-key navigation, copy as
+  CSV/TSV/Markdown/JSON/SQL, XLSX export, and CSV import into new or existing tables.
+- **Schema tools** — Modify/New Table dialogs that generate `ALTER` scripts
+  (SQLite table rebuilds included), schema compare with a migration script,
+  ER diagrams, Find Usages (Alt+F7), and renames that also update open SQL.
+- **Plans and activity** — Explain / Explain Analyze as a plan tree with
+  warnings, and server sessions and locks with cancel and terminate.
+- **Files** — a Files panel for the project folder and scratch files; SQL files
+  open in Query Tools bound to them (Ctrl+S), remember their data source, and
+  keep a local history with diffs.
+- **Dump and restore** — pg_dump/pg_restore/psql and mysqldump/mysql (password
+  passed in the environment, SSH tunnels honored), SQL Server `BACKUP`/`RESTORE`,
+  SQLite file copies, and a portable Bengine SQL dump that any provider can replay.
+- **Data compare** — two tables (any servers, any providers) compared by key,
+  with the `INSERT`/`UPDATE`/`DELETE` that sync the target.
+- **Connections** — SSH tunnels (host keys trusted on first use), SSL modes and
+  certificates, passwords in the OS keyring, per-server colors, and read-only servers.
+- **Keymap** — every shortcut can be rebound, and Find Action (Ctrl+Shift+A)
+  runs any action by name. Settings live in `~/.config/bengine/studio.json`.
 
 ## Run
 
@@ -166,13 +197,13 @@ npm install
 npm run dev                                  # http://localhost:5173
 ```
 
-Run the desktop Database Explorer (Avalonia):
+Run Bengine Data Studio (Avalonia):
 
 ```bash
 dotnet run --project src/Bengine.Studio
 ```
 
-### Releasing Bengine Studio
+### Releasing Bengine Data Studio
 
 Pushing a `studio-vX.Y.Z` tag runs `.github/workflows/release-studio.yml`: it runs
 the tests, publishes Studio self-contained (no .NET runtime needed) for Linux,
@@ -180,9 +211,9 @@ Windows, and macOS, and attaches the packages to a GitHub Release:
 
 | Platform | Package |
 | --- | --- |
-| Linux | `bengine-studio_X_amd64.deb`, `BengineStudio-X-x86_64.AppImage` |
-| Windows | `BengineStudio-Setup-X-x64.exe` (per-user, no admin prompt) |
-| macOS | `BengineStudio-X-arm64.dmg`, `BengineStudio-X-x64.dmg` |
+| Linux | `bengine-studio_X_amd64.deb`, `BengineDataStudio-X-x86_64.AppImage` |
+| Windows | `BengineDataStudio-Setup-X-x64.exe` (per-user, no admin prompt) |
+| macOS | `BengineDataStudio-X-arm64.dmg`, `BengineDataStudio-X-x64.dmg` |
 
 ```bash
 git tag studio-v1.0.0 && git push origin studio-v1.0.0
@@ -193,9 +224,12 @@ releasing. The packages are unsigned, so Windows SmartScreen and macOS Gatekeepe
 warn on first launch. Icons and packaging scripts live in `deploy/studio`
 (`make-icons.py` regenerates the icons; `package-linux.sh` also runs locally).
 
-Live-database tests run against PostgreSQL when `BENGINE_TEST_PG` is set to
-`host;port;database;user;password`; the desktop UI tests render screenshots to
-the directory named by `BENGINE_SHOTS`.
+Live-database tests run when `BENGINE_TEST_PG`, `BENGINE_TEST_MYSQL`,
+`BENGINE_TEST_MARIADB`, or `BENGINE_TEST_MSSQL` is set to
+`host;port;database;user;password` (each test works in a scratch database it
+creates and drops); `BENGINE_TEST_SSH` adds the SSH tunnel test and
+`BENGINE_TEST_KEYRING=1` the OS keyring test. The desktop UI tests render
+screenshots to the directory named by `BENGINE_SHOTS`.
 
 ## Design rules
 

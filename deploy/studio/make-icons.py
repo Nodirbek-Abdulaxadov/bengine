@@ -1,4 +1,4 @@
-# Bengine Studio package icons (bengine-studio.png, .ico, .icns): a gold database
+# Bengine Data Studio package icons (bengine-studio.png, .ico, .icns): a gold database
 # cylinder — the same symbol the explorer tree uses for a database — on the dark
 # Studio background, with an orange explorer chevron. Drawn here, so there is no
 # separate source image. Re-run after changing the design:

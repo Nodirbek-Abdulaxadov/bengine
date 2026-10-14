@@ -12,7 +12,7 @@
     <AssemblyName>bengine-studio</AssemblyName>
     <RootNamespace>Bengine.Studio</RootNamespace>
     <ApplicationIcon>..\..\deploy\studio\bengine-studio.ico</ApplicationIcon>
-    <Product>Bengine Studio</Product>
+    <Product>Bengine Data Studio</Product>
     <Description>Database explorer for PostgreSQL, MySQL, SQL Server, and SQLite.</Description>
     <Version>0.0.0</Version>
   </PropertyGroup>

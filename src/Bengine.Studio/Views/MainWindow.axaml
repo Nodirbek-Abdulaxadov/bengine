@@ -9,7 +9,7 @@
         FontSize="13"
         Background="{StaticResource Bg}"
         Icon="/Assets/bengine-studio.png"
-        Title="Bengine Studio">
+        Title="Bengine Data Studio">
 
   <Window.DataTemplates>
     <DataTemplate DataType="vm:PropertiesDocumentViewModel"><v:PropertiesView /></DataTemplate>
