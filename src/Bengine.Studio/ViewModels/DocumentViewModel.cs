@@ -96,6 +96,12 @@ public sealed partial class SqlDocumentViewModel : DocumentViewModel
     /// <summary>Gets the object's key (<c>server|node</c>).</summary>
     public string? Key { get; }
 
+    /// <summary>Gets the server's registration id, so the tab can be reopened after a restart.</summary>
+    public string? ServerId { get; init; }
+
+    /// <summary>Gets the database the object lives in.</summary>
+    public string? Database { get; init; }
+
     /// <summary>Gets or sets the action that opens the SQL in a Query Tool (set by the explorer).</summary>
     public Action<string>? OpenInQueryTool { get; set; }
 

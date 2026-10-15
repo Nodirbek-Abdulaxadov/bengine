@@ -83,11 +83,15 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
     /// <param name="context">The explorer context.</param>
     /// <param name="table">The relation.</param>
     /// <param name="where">An initial <c>WHERE</c> condition, or <c>null</c>.</param>
-    public DataDocumentViewModel(DataContext context, TableRef table, string? where = null)
+    /// <param name="orderBy">An initial <c>ORDER BY</c>, or <c>null</c>.</param>
+    /// <param name="pageSize">The page size, or <c>null</c> for the default.</param>
+    public DataDocumentViewModel(DataContext context, TableRef table, string? where = null, string? orderBy = null, int? pageSize = null)
     {
         _context = context;
         Table = table;
         _whereText = where ?? string.Empty;
+        _orderByText = orderBy ?? string.Empty;
+        _pageSize = pageSize is { } size && PageSizes.Contains(size) ? size : _pageSize;
         Rows.CollectionChanged += (_, _) => UpdatePending();
     }
 
@@ -96,6 +100,9 @@ public sealed partial class DataDocumentViewModel : DocumentViewModel
 
     /// <summary>Gets the server.</summary>
     public ServerProfile Server => _context.Server;
+
+    /// <summary>Gets the database.</summary>
+    public string? Database => _context.Database;
 
     /// <summary>Gets the "server / database" label.</summary>
     public string Location => $"{Server.Name} / {_context.Database}";

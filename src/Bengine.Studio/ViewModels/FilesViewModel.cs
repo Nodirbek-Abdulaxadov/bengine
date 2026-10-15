@@ -27,11 +27,13 @@ public sealed partial class FileItem : ObservableObject
     /// <summary>Gets whether it is a folder.</summary>
     public bool IsDirectory { get; }
 
-    /// <summary>Gets the icon glyph (folders show only the tree's expander).</summary>
-    public string Glyph => IsDirectory ? string.Empty : "≡";
+    /// <summary>Gets the icon: the file type's, or a folder (open when expanded).</summary>
+    public Avalonia.Media.IImage? Icon => Bengine.Studio.Controls.MaterialIcons.ForFile(Name, IsDirectory, IsExpanded);
 
     /// <summary>Gets the children of a folder.</summary>
     public ObservableCollection<FileItem> Children { get; } = [];
+
+    partial void OnIsExpandedChanged(bool value) => OnPropertyChanged(nameof(Icon));
 }
 
 /// <summary>

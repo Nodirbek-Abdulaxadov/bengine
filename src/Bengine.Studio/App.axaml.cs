@@ -23,6 +23,9 @@ public sealed class App : Application
             var window = new MainWindow(store);
             var explorer = new ExplorerViewModel(store) { Dialogs = window };
             window.DataContext = explorer;
+
+            // Tabs, tree, and window come back as they were left.
+            window.RestoreWorkspace(Path.Combine(Path.GetDirectoryName(store.FilePath) ?? ".", "workspace.json"));
             desktop.MainWindow = window;
         }
 
