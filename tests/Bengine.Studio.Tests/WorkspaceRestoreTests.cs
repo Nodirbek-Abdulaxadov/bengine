@@ -178,3 +178,27 @@ public sealed class WorkspaceRestoreTests
     }
 }
 
+/// <summary>The Material Icon Theme icons the Studio ships.</summary>
+public sealed class MaterialIconTests
+{
+    [AvaloniaFact]
+    public void Every_icon_in_use_is_shipped_and_draws()
+    {
+        foreach (var name in Bengine.Studio.Controls.MaterialIcons.Names())
+        {
+            var image = Bengine.Studio.Controls.MaterialIcons.Get(name);
+            Assert.True(image is not null, $"{name}.svg is missing from Assets/Icons.");
+            Assert.True(image!.Size.Width > 0 && image.Size.Height > 0, name);
+        }
+
+        Assert.Same(Bengine.Studio.Controls.MaterialIcons.Get("database"), Bengine.Studio.Controls.MaterialIcons.ForFile("report.sql", isDirectory: false));
+        Assert.Same(Bengine.Studio.Controls.MaterialIcons.Get("file"), Bengine.Studio.Controls.MaterialIcons.ForFile("archive.unknown", isDirectory: false));
+        Assert.Same(Bengine.Studio.Controls.MaterialIcons.Get("folder-migrations-open"), Bengine.Studio.Controls.MaterialIcons.ForFile("migrations", isDirectory: true, expanded: true));
+        Assert.Same(Bengine.Studio.Controls.MaterialIcons.Get("folder-views"), Bengine.Studio.Controls.MaterialIcons.ForTreeFolder("ViewsFolder", expanded: false));
+        Assert.Same(Bengine.Studio.Controls.MaterialIcons.Get("folder-open"), Bengine.Studio.Controls.MaterialIcons.ForTreeFolder("SomethingNew", expanded: true));
+
+        // The view box sets the size, so an icon keeps its margins.
+        var svg = System.Xml.Linq.XDocument.Parse("<svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\"><path d=\"M0 0h24v24H0z\"/><circle cx=\"12\" cy=\"12\" r=\"2\" fill=\"#42a5f5\"/></svg>");
+        Assert.Equal(new Avalonia.Size(24, 24), Bengine.Studio.Controls.MaterialIcons.Parse(svg).Size);
+    }
+}

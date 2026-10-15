@@ -148,7 +148,7 @@
             <TreeView.ItemTemplate>
               <TreeDataTemplate DataType="vm:FileItem" ItemsSource="{Binding Children}">
                 <StackPanel Orientation="Horizontal" Spacing="6" Height="22" ToolTip.Tip="{Binding Path}">
-                  <TextBlock Text="{Binding Glyph}" Classes="dim" Width="12" VerticalAlignment="Center" />
+                  <Image Source="{Binding Icon}" Width="16" Height="16" VerticalAlignment="Center" />
                   <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="{Binding IsDirectory, Converter={x:Static c:Converters.BoldIfTrue}}" />
                 </StackPanel>
               </TreeDataTemplate>

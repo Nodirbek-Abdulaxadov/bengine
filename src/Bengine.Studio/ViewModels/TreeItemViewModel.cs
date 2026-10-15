@@ -82,7 +82,9 @@ public sealed partial class TreeItemViewModel : ObservableObject
     /// <summary>Gets the row's icon (rebuilt when the connection state changes).</summary>
     public Control? Icon => IsPlaceholder
         ? null
-        : _icon ??= TreeIcons.Create(IconKind, Server?.Provider ?? Enums.DatabaseProvider.PostgreSql, IconConnected, Node?.Badge);
+        : _icon ??= IsFolder
+            ? new Avalonia.Controls.Image { Source = MaterialIcons.ForTreeFolder(_virtualKind is not null ? Label : Node!.Ref.Kind.ToString(), IsExpanded), Width = 16, Height = 16 }
+            : TreeIcons.Create(IconKind, Server?.Provider ?? Enums.DatabaseProvider.PostgreSql, IconConnected, Node?.Badge);
 
     /// <summary>Gets the kind whose icon the row shows: object-kind folders show a folder, as DataGrip does.</summary>
     public string IconKind => _virtualKind is not null || Node?.IsFolder == true ? "Folder" : Kind;
@@ -162,6 +164,13 @@ public sealed partial class TreeItemViewModel : ObservableObject
 
     partial void OnIsExpandedChanged(bool value)
     {
+        if (IsFolder)
+        {
+            // An open folder shows the open icon.
+            _icon = null;
+            OnPropertyChanged(nameof(Icon));
+        }
+
         if (value && !_loaded && (Node is not null || _loader is not null) && !IsLoading)
         {
             _ = LoadAsync();
