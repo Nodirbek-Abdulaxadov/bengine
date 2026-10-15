@@ -56,6 +56,7 @@ public partial class MainWindow : Window, IDialogService
         _fileTree.KeyDown += OnFileTreeKeyDown;
         _fileTree.ContextRequested += OnFileTreeContextRequested;
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
+        PositionChanged += OnPositionChanged;
     }
 
     private ExplorerViewModel? ViewModel => DataContext as ExplorerViewModel;

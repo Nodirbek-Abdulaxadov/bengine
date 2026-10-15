@@ -61,7 +61,7 @@
       </DockPanel>
     </Border>
 
-    <Grid ColumnDefinitions="340,4,*">
+    <Grid x:Name="Body" ColumnDefinitions="340,4,*">
       <TabControl Grid.Column="0" Classes="side" x:Name="SidePanels" Padding="0" Background="{StaticResource Panel}">
       <!-- Object Explorer -->
       <TabItem Header="Database">

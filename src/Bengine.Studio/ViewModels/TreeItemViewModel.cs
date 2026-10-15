@@ -87,6 +87,19 @@ public sealed partial class TreeItemViewModel : ObservableObject
     /// <summary>Gets the kind whose icon the row shows: object-kind folders show a folder, as DataGrip does.</summary>
     public string IconKind => _virtualKind is not null || Node?.IsFolder == true ? "Folder" : Kind;
 
+    /// <summary>Gets a value indicating whether the row's children have been loaded.</summary>
+    public bool IsLoaded => _loaded;
+
+    /// <summary>
+    /// Gets a key that names the row across restarts: <c>serverId|node</c> for a
+    /// catalog row, the parent's key and the label for a layout folder
+    /// (<c>routines</c>, <c>keys</c>, …), <c>group|name</c> for a group.
+    /// </summary>
+    public string StateKey => Group is not null ? $"group|{Group}"
+        : _virtualKind is not null && Parent is not null ? $"{Parent.StateKey}/{Label}"
+        : Server is not null && Node is not null ? $"{Server.Id}|{Node.Ref.Id}"
+        : Label;
+
     /// <summary>Gets a value indicating whether the row groups objects (an object-kind or virtual folder).</summary>
     public bool IsFolder => _virtualKind is not null || Node?.IsFolder == true;
 
@@ -96,6 +109,11 @@ public sealed partial class TreeItemViewModel : ObservableObject
         "Database" => IsConnected,
         _ => true,
     };
+
+    /// <summary>Gets the server id a <see cref="StateKey"/> belongs to.</summary>
+    /// <param name="key">The key.</param>
+    /// <returns>The server id, or an empty string for a group.</returns>
+    public static string ServerIdOf(string key) => key.StartsWith("group|", StringComparison.Ordinal) ? string.Empty : key.Split('|')[0];
 
     /// <summary>Creates a server-group row.</summary>
     /// <param name="owner">The explorer.</param>
@@ -193,6 +211,8 @@ public sealed partial class TreeItemViewModel : ObservableObject
             {
                 _owner.MarkConnected(Server);
             }
+
+            _owner.RestoreChildren(this);
         }
         catch (IntrospectionException ex)
         {

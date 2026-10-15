@@ -279,6 +279,15 @@ public sealed partial class ExplorerViewModel : ObservableObject
             return existing;
         }
 
+        var doc = CreateData(server, database, table, where);
+        AddTab(doc);
+        _ = doc.InitializeAsync();
+        return doc;
+    }
+
+    // A data editor, not yet shown or loaded.
+    private DataDocumentViewModel CreateData(ServerProfile server, string? database, TableRef table, string? where, string? orderBy = null, int? pageSize = null)
+    {
         var context = new DataContext(
             server,
             database,
@@ -287,10 +296,7 @@ public sealed partial class ExplorerViewModel : ObservableObject
             (target, condition) => OpenData(server, database, target, condition),
             sql => _ = OpenQueryAsync(server, database, sql),
             Dialogs);
-        var doc = new DataDocumentViewModel(context, table, where);
-        AddTab(doc);
-        _ = doc.InitializeAsync();
-        return doc;
+        return new DataDocumentViewModel(context, table, where, orderBy, pageSize);
     }
 
     /// <summary>Opens a Query Tool on a database of a server.</summary>
@@ -306,6 +312,15 @@ public sealed partial class ExplorerViewModel : ObservableObject
             return null;
         }
 
+        var doc = CreateQuery(server, database, sql, filePath);
+        AddTab(doc);
+        _ = doc.InitializeAsync();
+        return doc;
+    }
+
+    // A Query Tool, not yet shown or connected.
+    private QueryDocumentViewModel CreateQuery(ServerProfile server, string? database, string? sql, string? filePath)
+    {
         var db = database ?? server.MaintenanceDatabase ?? (server.Provider == Bengine.Enums.DatabaseProvider.Sqlite ? "main" : null);
         var context = new QueryContext(
             server,
@@ -315,10 +330,7 @@ public sealed partial class ExplorerViewModel : ObservableObject
             History,
             Dialogs,
             Files);
-        var doc = new QueryDocumentViewModel(context, db, sql, filePath);
-        AddTab(doc);
-        _ = doc.InitializeAsync();
-        return doc;
+        return new QueryDocumentViewModel(context, db, sql, filePath);
     }
 
     /// <summary>
@@ -1122,6 +1134,7 @@ public sealed partial class ExplorerViewModel : ObservableObject
         }
 
         var index = Tabs.IndexOf(doc);
+        _deferred.Remove(doc);
         Tabs.Remove(doc);
         if (ActiveTab == doc || ActiveTab is null)
         {
@@ -1290,6 +1303,8 @@ public sealed partial class ExplorerViewModel : ObservableObject
                 Provider = server.Provider,
                 Breadcrumb = string.Join("  ›  ", item.Breadcrumb()),
                 BreadcrumbKind = item.Kind,
+                ServerId = server.Id,
+                Database = node.Ref.Database,
                 OpenInQueryTool = text => _ = OpenQueryAsync(server, node.Ref.Database, text),
             };
             AddTab(doc);

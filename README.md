@@ -203,6 +203,14 @@ PostgreSQL, MySQL/MariaDB, SQL Server, SQLite, and Oracle (MongoDB as described 
   certificates, passwords in the OS keyring, per-server colors, and read-only servers.
 - **Keymap** — every shortcut can be rebound, and Find Action (Ctrl+Shift+A)
   runs any action by name. Settings live in `~/.config/bengine/studio.json`.
+- **Workspace restore** — closing and reopening the Studio brings back the open
+  tabs (consoles with their text, unsaved edits of SQL files included; data
+  editors with their filter and sort; DDL, activity, and diagrams), the expanded
+  and selected tree rows, and the window's size, place, and side panel. Restored
+  tabs connect when first shown; servers that were open reconnect at once only
+  when no password has to be typed. The state is saved on exit and every 20
+  seconds to `~/.config/bengine/workspace.json` (owner-only; no passwords or
+  results).
 
 ## Run
 
